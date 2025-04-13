@@ -109,8 +109,8 @@ void crypto_convert_to_unit(const crypto_amount_t* amount, crypto_amount_t* resu
 void crypto_print_amount(const crypto_amount_t* amount);
 
 // New function declarations for type-safe value setting
-void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, uint64_t fraction);
-void crypto_set_value_from_decimal(crypto_amount_t* amount, btc_unit_t unit, const char* decimal_str);
+void crypto_set_value(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, uint64_t whole, uint64_t fraction);
+void crypto_set_value_from_decimal(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, const char* decimal_str);
 
 // Arithmetic operation declarations
 void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
@@ -145,7 +145,16 @@ void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit) {
     mpq_init(amount->value);
     amount->type = type;
     amount->unit = unit;
-    amount->unit_info = &bitcoin_units[unit];
+    switch (type) {
+        case CRYPTO_BITCOIN:
+            amount->unit_info = &bitcoin_units[unit];
+            break;
+        case CRYPTO_ETHEREUM:
+            amount->unit_info = &ethereum_units[unit];
+            break;
+        default:
+            assert(0);  // Invalid crypto type
+    }
 }
 
 void crypto_clear(crypto_amount_t* amount) {
@@ -227,14 +236,15 @@ void crypto_print_amount(const crypto_amount_t* amount) {
     free(str);
 }
 
-void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, uint64_t fraction) {
+void crypto_set_value(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, uint64_t whole, uint64_t fraction) {
     assert(amount != NULL);
-    assert(crypto_is_valid_amount(amount));
-    assert(amount->type == CRYPTO_BITCOIN);
-    assert(crypto_is_valid_unit(amount->type, unit));
+    assert(crypto_is_valid_unit(type, unit));
+    
+    // Initialize the amount with the correct type and unit
+    crypto_init(amount, type, unit);
     
     // Get the unit info for the target unit
-    const crypto_unit_t* unit_info = crypto_get_unit_info(amount->type, unit);
+    const crypto_unit_t* unit_info = crypto_get_unit_info(type, unit);
     
     // Set the whole part
     mpq_set_ui(amount->value, whole, 1);
@@ -255,7 +265,7 @@ void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, 
         mpq_clear(fraction_part);
     }
     
-    // Convert to base unit (Bitcoin)
+    // Convert to base unit
     mpq_t conversion_factor;
     mpq_init(conversion_factor);
     mpq_set_ui(conversion_factor, 1, unit_info->denominator);
@@ -263,16 +273,13 @@ void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, 
     mpq_clear(conversion_factor);
 }
 
-void crypto_set_value_from_decimal(crypto_amount_t* amount, btc_unit_t unit, const char* decimal_str) {
+void crypto_set_value_from_decimal(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, const char* decimal_str) {
     assert(amount != NULL);
     assert(decimal_str != NULL);
-    assert(crypto_is_valid_unit(CRYPTO_BITCOIN, unit));
+    assert(crypto_is_valid_unit(type, unit));
     
     // Initialize the amount structure
-    amount->type = CRYPTO_BITCOIN;
-    amount->unit = unit;
-    amount->unit_info = &bitcoin_units[unit];
-    mpq_init(amount->value);
+    crypto_init(amount, type, unit);
     
     // Parse the decimal string
     const char* p = decimal_str;
@@ -331,11 +338,12 @@ void crypto_set_value_from_decimal(crypto_amount_t* amount, btc_unit_t unit, con
     mpz_clear(fraction);
     mpz_clear(denominator);
     
-    // Only convert if the input unit is not Bitcoin
-    if (unit != BTC_UNIT_BITCOIN) {
+    // Convert to base unit if needed
+    const crypto_unit_t* unit_info = crypto_get_unit_info(type, unit);
+    if (unit_info->denominator != 1) {
         mpq_t conversion_factor;
         mpq_init(conversion_factor);
-        mpq_set_ui(conversion_factor, 1, amount->unit_info->denominator);
+        mpq_set_ui(conversion_factor, 1, unit_info->denominator);
         mpq_mul(amount->value, amount->value, conversion_factor);
         mpq_clear(conversion_factor);
     }

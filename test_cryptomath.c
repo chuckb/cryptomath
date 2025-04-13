@@ -7,7 +7,7 @@
 
 // Helper function to verify a result
 void verify_result(const char* operation, const crypto_amount_t* result, 
-                  btc_unit_t expected_unit, uint64_t expected_whole, 
+                  crypto_type_t type, uint8_t expected_unit, uint64_t expected_whole, 
                   uint64_t expected_fraction, int is_negative) {
     // Convert result to string for comparison
     char* str = mpq_get_str(NULL, 10, result->value);
@@ -18,8 +18,20 @@ void verify_result(const char* operation, const crypto_amount_t* result,
     
     // Create expected value
     crypto_amount_t expected;
-    crypto_init_bitcoin(&expected, expected_unit);
-    crypto_set_value(&expected, expected_unit, expected_whole, expected_fraction);
+    switch (type) {
+        case CRYPTO_BITCOIN:
+            crypto_init_bitcoin(&expected, expected_unit);
+            break;
+        case CRYPTO_ETHEREUM:
+            crypto_init_ethereum(&expected, expected_unit);
+            break;
+        default:
+            printf("ERROR: Invalid crypto type\n");
+            free(str);
+            return;
+    }
+    
+    crypto_set_value(&expected, type, expected_unit, expected_whole, expected_fraction);
     
     // Apply sign if needed
     if (is_negative) {
@@ -37,6 +49,14 @@ void verify_result(const char* operation, const crypto_amount_t* result,
         crypto_print_amount(&expected);
     }
     
+    // Verify the result has the correct type and unit
+    if (result->type != type) {
+        printf("  ERROR: Result has wrong crypto type (got %d, expected %d)\n", result->type, type);
+    }
+    if (result->unit != expected_unit) {
+        printf("  ERROR: Result has wrong unit (got %d, expected %d)\n", result->unit, expected_unit);
+    }
+    
     free(str);
     crypto_clear(&expected);
 }
@@ -47,7 +67,7 @@ void test_bitcoin_conversions() {
     // Test 1: 1 BTC to SAT
     crypto_amount_t btc, sat;
     crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
-    crypto_set_value(&btc, BTC_UNIT_BITCOIN, 1, 0);  // 1.0 BTC
+    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);  // 1.0 BTC
     
     crypto_convert_to_unit(&btc, &sat, BTC_UNIT_SATOSHI);
     printf("1 BTC = ");
@@ -55,7 +75,7 @@ void test_bitcoin_conversions() {
     
     // Test 2: 100000000 SAT to BTC
     crypto_init_bitcoin(&sat, BTC_UNIT_SATOSHI);
-    crypto_set_value(&sat, BTC_UNIT_SATOSHI, 100000000, 0);  // 100000000 SAT
+    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 100000000, 0);  // 100000000 SAT
     
     crypto_convert_to_unit(&sat, &btc, BTC_UNIT_BITCOIN);
     printf("100000000 SAT = ");
@@ -63,7 +83,7 @@ void test_bitcoin_conversions() {
     
     // Test 3: 0.001 BTC to mBTC
     crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
-    crypto_set_value(&btc, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
+    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
     
     crypto_amount_t mbtc;
     crypto_convert_to_unit(&btc, &mbtc, BTC_UNIT_MILLIBIT);
@@ -72,14 +92,14 @@ void test_bitcoin_conversions() {
     
     // Test 4: 1.234 mBTC
     crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
-    crypto_set_value(&mbtc, BTC_UNIT_MILLIBIT, 1, 234);  // 1.234 mBTC
+    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 234);  // 1.234 mBTC
     printf("1.234 mBTC = ");
     crypto_print_amount(&mbtc);
     
     // Test 5: 123.45 μBTC
     crypto_amount_t ubtc;
     crypto_init_bitcoin(&ubtc, BTC_UNIT_MICROBIT);
-    crypto_set_value(&ubtc, BTC_UNIT_MICROBIT, 123, 45);  // 123.45 μBTC
+    crypto_set_value(&ubtc, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45);  // 123.45 μBTC
     printf("123.45 μBTC = ");
     crypto_print_amount(&ubtc);
     
@@ -132,24 +152,24 @@ void test_arithmetic_operations() {
     crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
     crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
     
-    crypto_set_value(&btc, BTC_UNIT_BITCOIN, 1, 0);      // 1.0 BTC
-    crypto_set_value(&mbtc, BTC_UNIT_MILLIBIT, 100, 0);  // 100 mBTC = 0.1 BTC
+    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);      // 1.0 BTC
+    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 100, 0);  // 100 mBTC = 0.1 BTC
     
     crypto_add(&btc, &mbtc, &result);
-    verify_result("1 BTC + 100 mBTC", &result, BTC_UNIT_BITCOIN, 1, 10000000, 0);
+    verify_result("1 BTC + 100 mBTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 10000000, 0);
     
     // Test 2: Subtracting different units (1 BTC - 50000000 SAT = 0.5 BTC)
     crypto_amount_t sat;
     crypto_init_bitcoin(&sat, BTC_UNIT_SATOSHI);
-    crypto_set_value(&sat, BTC_UNIT_SATOSHI, 50000000, 0);  // 0.5 BTC in satoshis
+    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 50000000, 0);  // 0.5 BTC in satoshis
     
     crypto_sub(&btc, &sat, &result);
-    verify_result("1 BTC - 50000000 SAT", &result, BTC_UNIT_BITCOIN, 0, 50000000, 0);
+    verify_result("1 BTC - 50000000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000, 0);
     
     // Test 3: Comparison of different units (50000000 SAT == 500000 μBTC)
     crypto_amount_t ubtc;
     crypto_init_bitcoin(&ubtc, BTC_UNIT_MICROBIT);
-    crypto_set_value(&ubtc, BTC_UNIT_MICROBIT, 500000, 0);  // 0.5 BTC in μBTC
+    crypto_set_value(&ubtc, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 500000, 0);  // 0.5 BTC in μBTC
     
     int cmp_result = crypto_cmp(&sat, &ubtc);
     printf("50000000 SAT %s 500000 μBTC: %s\n", 
@@ -160,21 +180,21 @@ void test_arithmetic_operations() {
     crypto_amount_t temp;
     crypto_add(&btc, &mbtc, &temp);
     crypto_sub(&temp, &sat, &result);
-    verify_result("1 BTC + 100 mBTC - 50000000 SAT", &result, BTC_UNIT_BITCOIN, 0, 60000000, 0);
+    verify_result("1 BTC + 100 mBTC - 50000000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 60000000, 0);
     
     // Test 5: Small value arithmetic (0.001 BTC + 1000 SAT = 0.002 BTC)
-    crypto_set_value(&btc, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
-    crypto_set_value(&sat, BTC_UNIT_SATOSHI, 1000, 0);    // 1000 SAT = 0.00001 BTC
+    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
+    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 1000, 0);    // 1000 SAT = 0.00001 BTC
     
     crypto_add(&btc, &sat, &result);
-    verify_result("0.001 BTC + 1000 SAT", &result, BTC_UNIT_BITCOIN, 0, 101000, 0);
+    verify_result("0.001 BTC + 1000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 101000, 0);
     
     // Test 6: Precision test (0.00000001 BTC + 1 SAT = 0.00000002 BTC)
-    crypto_set_value(&btc, BTC_UNIT_BITCOIN, 0, 1);       // 0.00000001 BTC
-    crypto_set_value(&sat, BTC_UNIT_SATOSHI, 1, 0);       // 1 SAT = 0.00000001 BTC
+    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 1);       // 0.00000001 BTC
+    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 1, 0);       // 1 SAT = 0.00000001 BTC
     
     crypto_add(&btc, &sat, &result);
-    verify_result("0.00000001 BTC + 1 SAT", &result, BTC_UNIT_BITCOIN, 0, 2, 0);
+    verify_result("0.00000001 BTC + 1 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 2, 0);
     
     // Cleanup
     crypto_clear(&btc);
@@ -191,49 +211,49 @@ void test_decimal_string_parsing() {
     // Test 1: Basic positive decimal
     crypto_amount_t amount;
     crypto_init_bitcoin(&amount, BTC_UNIT_BITCOIN);
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "1.23456789");
-    verify_result("1.23456789 BTC", &amount, BTC_UNIT_BITCOIN, 1, 23456789, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "1.23456789");
+    verify_result("1.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 0);
     
     // Test 2: Negative decimal
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "-0.00000001");
-    verify_result("-0.00000001 BTC", &amount, BTC_UNIT_BITCOIN, 0, 1, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "-0.00000001");
+    verify_result("-0.00000001 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 1, 1);
     
     // Test 3: Whole number
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "42");
-    verify_result("42 BTC", &amount, BTC_UNIT_BITCOIN, 42, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "42");
+    verify_result("42 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 42, 0, 0);
     
     // Test 4: Small value in satoshis
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_SATOSHI, "12345");
-    verify_result("12345 SAT", &amount, BTC_UNIT_SATOSHI, 12345, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, "12345");
+    verify_result("12345 SAT", &amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 12345, 0, 0);
     
     // Test 5: Millibitcoin with decimal
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_MILLIBIT, "1.23456");
-    verify_result("1.23456 mBTC", &amount, BTC_UNIT_MILLIBIT, 1, 23456, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, "1.23456");
+    verify_result("1.23456 mBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 23456, 0);
     
     // Test 6: Microbitcoin with decimal
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_MICROBIT, "123.45");
-    verify_result("123.45 μBTC", &amount, BTC_UNIT_MICROBIT, 123, 45, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, "123.45");
+    verify_result("123.45 μBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45, 0);
     
     // Test 7: Zero with decimal
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "0.00000000");
-    verify_result("0.00000000 BTC", &amount, BTC_UNIT_BITCOIN, 0, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "0.00000000");
+    verify_result("0.00000000 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 0, 0);
     
     // Test 8: Leading zeros
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "0001.23456789");
-    verify_result("0001.23456789 BTC", &amount, BTC_UNIT_BITCOIN, 1, 23456789, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "0001.23456789");
+    verify_result("0001.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 0);
     
     // Test 9: Negative values in different units
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_BITCOIN, "-1.23456789");
-    verify_result("-1.23456789 BTC", &amount, BTC_UNIT_BITCOIN, 1, 23456789, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "-1.23456789");
+    verify_result("-1.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 1);
     
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_SATOSHI, "-12345");
-    verify_result("-12345 SAT", &amount, BTC_UNIT_SATOSHI, 12345, 0, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, "-12345");
+    verify_result("-12345 SAT", &amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 12345, 0, 1);
     
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_MILLIBIT, "-1.23456");
-    verify_result("-1.23456 mBTC", &amount, BTC_UNIT_MILLIBIT, 1, 23456, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, "-1.23456");
+    verify_result("-1.23456 mBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 23456, 1);
     
-    crypto_set_value_from_decimal(&amount, BTC_UNIT_MICROBIT, "-123.45");
-    verify_result("-123.45 μBTC", &amount, BTC_UNIT_MICROBIT, 123, 45, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, "-123.45");
+    verify_result("-123.45 μBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45, 1);
     
     // Cleanup
     crypto_clear(&amount);
@@ -245,7 +265,7 @@ void test_ethereum_conversions() {
     // Test 1: 1 ETH to WEI
     crypto_amount_t eth, wei;
     crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
-    crypto_set_value(&eth, ETH_UNIT_ETHER, 1, 0);  // 1.0 ETH
+    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);  // 1.0 ETH
     
     crypto_convert_to_unit(&eth, &wei, ETH_UNIT_WEI);
     printf("1 ETH = ");
@@ -254,7 +274,7 @@ void test_ethereum_conversions() {
     // Test 2: 1000000000 GWEI to ETH
     crypto_amount_t gwei;
     crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
-    crypto_set_value(&gwei, ETH_UNIT_GWEI, 1000000000, 0);  // 1000000000 GWEI
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 1000000000, 0);  // 1000000000 GWEI
     
     crypto_convert_to_unit(&gwei, &eth, ETH_UNIT_ETHER);
     printf("1000000000 GWEI = ");
@@ -262,7 +282,7 @@ void test_ethereum_conversions() {
     
     // Test 3: 0.001 ETH to GWEI
     crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
-    crypto_set_value(&eth, ETH_UNIT_ETHER, 0, 1000000000000000);  // 0.001 ETH
+    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 1000000000000000);  // 0.001 ETH
     
     crypto_convert_to_unit(&eth, &gwei, ETH_UNIT_GWEI);
     printf("0.001 ETH = ");
@@ -309,22 +329,22 @@ void test_ethereum_arithmetic() {
     crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
     crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
     
-    crypto_set_value(&eth, ETH_UNIT_ETHER, 1, 0);      // 1.0 ETH
-    crypto_set_value(&gwei, ETH_UNIT_GWEI, 100, 0);    // 100 GWEI = 0.0000001 ETH
+    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1.0 ETH
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 100, 0);    // 100 GWEI = 0.0000001 ETH
     
     crypto_add(&eth, &gwei, &result);
-    verify_result("1 ETH + 100 GWEI", &result, ETH_UNIT_ETHER, 1, 100000000000, 0);
+    verify_result("1 ETH + 100 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 100000000000, 0);
     
     // Test 2: Subtracting different units (1 ETH - 500000000 GWEI = 0.5 ETH)
-    crypto_set_value(&gwei, ETH_UNIT_GWEI, 500000000, 0);  // 0.5 ETH in gwei
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 500000000, 0);  // 0.5 ETH in gwei
     
     crypto_sub(&eth, &gwei, &result);
-    verify_result("1 ETH - 500000000 GWEI", &result, ETH_UNIT_ETHER, 0, 500000000000000000, 0);
+    verify_result("1 ETH - 500000000 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000, 0);
     
     // Test 3: Comparison of different units (500000000 GWEI == 0.5 ETH)
     crypto_amount_t half_eth;
     crypto_init_ethereum(&half_eth, ETH_UNIT_ETHER);
-    crypto_set_value(&half_eth, ETH_UNIT_ETHER, 0, 500000000000000000);  // 0.5 ETH
+    crypto_set_value(&half_eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000);  // 0.5 ETH
     
     int cmp_result = crypto_cmp(&gwei, &half_eth);
     printf("500000000 GWEI %s 0.5 ETH: %s\n", 
@@ -344,24 +364,24 @@ void test_ethereum_decimal_string_parsing() {
     // Test 1: Basic positive decimal
     crypto_amount_t amount;
     crypto_init_ethereum(&amount, ETH_UNIT_ETHER);
-    crypto_set_value_from_decimal(&amount, ETH_UNIT_ETHER, "1.234567890123456789");
-    verify_result("1.234567890123456789 ETH", &amount, ETH_UNIT_ETHER, 1, 234567890123456789, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "1.234567890123456789");
+    verify_result("1.234567890123456789 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 234567890123456789, 0);
     
     // Test 2: Negative decimal
-    crypto_set_value_from_decimal(&amount, ETH_UNIT_ETHER, "-0.000000000000000001");
-    verify_result("-0.000000000000000001 ETH", &amount, ETH_UNIT_ETHER, 0, 1, 1);
+    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "-0.000000000000000001");
+    verify_result("-0.000000000000000001 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 1, 1);
     
     // Test 3: Whole number
-    crypto_set_value_from_decimal(&amount, ETH_UNIT_ETHER, "42");
-    verify_result("42 ETH", &amount, ETH_UNIT_ETHER, 42, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "42");
+    verify_result("42 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 42, 0, 0);
     
     // Test 4: Small value in gwei
-    crypto_set_value_from_decimal(&amount, ETH_UNIT_GWEI, "12345");
-    verify_result("12345 GWEI", &amount, ETH_UNIT_GWEI, 12345, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, "12345");
+    verify_result("12345 GWEI", &amount, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 12345, 0, 0);
     
     // Test 5: Wei with decimal
-    crypto_set_value_from_decimal(&amount, ETH_UNIT_WEI, "1234567890123456789");
-    verify_result("1234567890123456789 WEI", &amount, ETH_UNIT_WEI, 1234567890123456789, 0, 0);
+    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_WEI, "1234567890123456789");
+    verify_result("1234567890123456789 WEI", &amount, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1234567890123456789, 0, 0);
     
     // Cleanup
     crypto_clear(&amount);
