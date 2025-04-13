@@ -5,14 +5,22 @@
 #define CRYPTOMATH_IMPLEMENTATION
 #include "cryptomath.h"
 
+// Test result tracking
+static int total_tests = 0;
+static int passed_tests = 0;
+static int failed_tests = 0;
+
 // Helper function to verify a result
 void verify_result(const char* operation, const crypto_amount_t* result, 
                   crypto_type_t type, uint8_t expected_unit, uint64_t expected_whole, 
                   uint64_t expected_fraction, int is_negative) {
+    total_tests++;
+    
     // Convert result to string for comparison
     char* str = mpq_get_str(NULL, 10, result->value);
     if (!str) {
         printf("ERROR: Failed to convert result to string\n");
+        failed_tests++;
         return;
     }
     
@@ -28,6 +36,7 @@ void verify_result(const char* operation, const crypto_amount_t* result,
         default:
             printf("ERROR: Invalid crypto type\n");
             free(str);
+            failed_tests++;
             return;
     }
     
@@ -47,14 +56,19 @@ void verify_result(const char* operation, const crypto_amount_t* result,
     if (cmp != 0) {
         printf("  Expected: ");
         crypto_print_amount(&expected);
+        failed_tests++;
+    } else {
+        passed_tests++;
     }
     
     // Verify the result has the correct type and unit
     if (result->type != type) {
         printf("  ERROR: Result has wrong crypto type (got %d, expected %d)\n", result->type, type);
+        failed_tests++;
     }
     if (result->unit != expected_unit) {
         printf("  ERROR: Result has wrong unit (got %d, expected %d)\n", result->unit, expected_unit);
+        failed_tests++;
     }
     
     free(str);
@@ -350,10 +364,40 @@ void test_ethereum_arithmetic() {
     printf("500000000 GWEI %s 0.5 ETH: %s\n", 
            cmp_result == 0 ? "==" : (cmp_result > 0 ? ">" : "<"),
            cmp_result == 0 ? "✓ PASSED" : "✗ FAILED");
+    if (cmp_result == 0) passed_tests++; else failed_tests++;
+    total_tests++;
+    
+    // Test 4: Adding ETH and WEI (1 ETH + 1000000000000000000 WEI = 2 ETH)
+    crypto_amount_t wei;
+    crypto_init_ethereum(&wei, ETH_UNIT_WEI);
+    crypto_set_value(&wei, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1000000000000000000, 0);  // 1 ETH in wei
+    
+    crypto_add(&eth, &wei, &result);
+    verify_result("1 ETH + 1000000000000000000 WEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2, 0, 0);
+    
+    // Test 5: Subtracting WEI from GWEI (1 GWEI - 1000000000 WEI = 0.999 GWEI)
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 1000000000, 0);  // 1 GWEI
+    crypto_set_value(&wei, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1000000000, 0);    // 0.001 GWEI in wei
+    
+    crypto_sub(&gwei, &wei, &result);
+    verify_result("1 GWEI - 1000000000 WEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 999999999, 0, 0);
+    
+    // Test 6: Complex arithmetic with all units (1 ETH + 100 GWEI - 1 ETH = 100 GWEI)
+    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1 ETH
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 100, 0);    // 100 GWEI
+    
+    // First add ETH and GWEI
+    crypto_add(&eth, &gwei, &result);
+    
+    // Then subtract 1 ETH using in-place subtraction
+    crypto_sub_inplace(&result, &eth);
+    
+    verify_result("1 ETH + 100 GWEI - 1 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 100000000000, 0);
     
     // Cleanup
     crypto_clear(&eth);
     crypto_clear(&gwei);
+    crypto_clear(&wei);
     crypto_clear(&result);
     crypto_clear(&half_eth);
 }
@@ -400,6 +444,11 @@ int main() {
     test_decimal_string_parsing();
     test_ethereum_decimal_string_parsing();
     
-    printf("\nTest Suite Completed\n");
-    return 0;
+    printf("\nTest Suite Summary:\n");
+    printf("Total Tests: %d\n", total_tests);
+    printf("Passed: %d\n", passed_tests);
+    printf("Failed: %d\n", failed_tests);
+    printf("Success Rate: %.2f%%\n", (float)passed_tests / total_tests * 100);
+    
+    return failed_tests > 0 ? 1 : 0;
 } 

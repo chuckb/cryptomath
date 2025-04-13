@@ -43,7 +43,7 @@ typedef struct {
 typedef struct {
     mpq_t value;           // GMP rational number to store the value
     crypto_type_t type;    // Type of cryptocurrency
-    btc_unit_t unit;       // Unit of the amount
+    uint8_t unit;          // Unit of the amount
     const crypto_unit_t* unit_info;  // Pointer to unit information
 } crypto_amount_t;
 
@@ -115,6 +115,8 @@ void crypto_set_value_from_decimal(crypto_amount_t* amount, crypto_type_t type, 
 // Arithmetic operation declarations
 void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
 void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
+void crypto_add_inplace(crypto_amount_t* a, const crypto_amount_t* b);
+void crypto_sub_inplace(crypto_amount_t* a, const crypto_amount_t* b);
 int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b);
 
 // Implementation section
@@ -371,6 +373,42 @@ void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amoun
     
     // Subtract the values
     mpq_sub(result->value, a->value, b->value);
+}
+
+void crypto_add_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
+    assert(a != NULL && b != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);
+    
+    // Create a temporary result to avoid issues when a == b
+    mpq_t temp;
+    mpq_init(temp);
+    // Add the values
+    mpq_add(temp, a->value, b->value);
+    
+    // Copy the result back to a
+    mpq_set(a->value, temp);
+    
+    // Clean up the temporary
+    mpq_clear(temp);
+}
+    
+void crypto_sub_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
+    assert(a != NULL && b != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);
+    
+    // Create a temporary result to avoid issues when a == b
+    mpq_t temp;
+    mpq_init(temp);
+    // Subtract the values
+    mpq_sub(temp, a->value, b->value);
+    
+    // Copy the result back to a
+    mpq_set(a->value, temp);
+    
+    // Clean up the temporary
+    mpq_clear(temp);
 }
 
 int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b) {
