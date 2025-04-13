@@ -1,0 +1,378 @@
+#ifndef CRYPTOMATH_H
+#define CRYPTOMATH_H
+
+#include <gmp.h>
+#include <stdint.h>
+#include <assert.h>
+#include <string.h>
+
+// Enumeration of supported cryptocurrencies
+typedef enum {
+    CRYPTO_BITCOIN,
+    CRYPTO_ETHEREUM,
+    // Add more cryptocurrencies here as needed
+    CRYPTO_COUNT  // Keep this as the last entry
+} crypto_type_t;
+
+// Enumeration of Bitcoin denominations
+typedef enum {
+    BTC_UNIT_BITCOIN,
+    BTC_UNIT_SATOSHI,
+    BTC_UNIT_MILLIBIT,
+    BTC_UNIT_MICROBIT,
+    BTC_UNIT_COUNT  // Keep this as the last entry
+} btc_unit_t;
+
+// Enumeration of Ethereum denominations
+typedef enum {
+    ETH_UNIT_ETHER,
+    ETH_UNIT_GWEI,
+    ETH_UNIT_WEI,
+    ETH_UNIT_COUNT  // Keep this as the last entry
+} eth_unit_t;
+
+// Structure to define a cryptocurrency unit
+typedef struct {
+    const char* name;      // Human-readable name
+    const char* symbol;    // Symbol (e.g., "BTC", "SAT")
+    uint64_t denominator;  // Denominator relative to base unit
+    uint8_t decimals;      // Number of decimal places
+} crypto_unit_t;
+
+// Structure to hold a cryptocurrency amount with arbitrary precision
+typedef struct {
+    mpq_t value;           // GMP rational number to store the value
+    crypto_type_t type;    // Type of cryptocurrency
+    btc_unit_t unit;       // Unit of the amount
+    const crypto_unit_t* unit_info;  // Pointer to unit information
+} crypto_amount_t;
+
+// Bitcoin unit definitions
+static const crypto_unit_t bitcoin_units[] = {
+    [BTC_UNIT_BITCOIN] = {
+        .name = "Bitcoin",
+        .symbol = "BTC",
+        .denominator = 1ULL,
+        .decimals = 8
+    },
+    [BTC_UNIT_SATOSHI] = {
+        .name = "Satoshi",
+        .symbol = "SAT",
+        .denominator = 100000000ULL,
+        .decimals = 0
+    },
+    [BTC_UNIT_MILLIBIT] = {
+        .name = "Millibit",
+        .symbol = "mBTC",
+        .denominator = 1000ULL,
+        .decimals = 5
+    },
+    [BTC_UNIT_MICROBIT] = {
+        .name = "Microbit",
+        .symbol = "μBTC",
+        .denominator = 1000000ULL,
+        .decimals = 2
+    }
+};
+
+// Ethereum unit definitions
+static const crypto_unit_t ethereum_units[] = {
+    [ETH_UNIT_ETHER] = {
+        .name = "Ether",
+        .symbol = "ETH",
+        .denominator = 1ULL,
+        .decimals = 18
+    },
+    [ETH_UNIT_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .denominator = 1000000000ULL,
+        .decimals = 9
+    },
+    [ETH_UNIT_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .denominator = 1000000000000000000ULL,
+        .decimals = 0
+    }
+};
+
+// Function declarations
+int crypto_is_valid_unit(crypto_type_t type, uint8_t unit);
+int crypto_is_valid_amount(const crypto_amount_t* amount);
+void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit);
+void crypto_clear(crypto_amount_t* amount);
+void crypto_init_bitcoin(crypto_amount_t* amount, btc_unit_t unit);
+void crypto_init_ethereum(crypto_amount_t* amount, eth_unit_t unit);
+const crypto_unit_t* crypto_get_unit_info(crypto_type_t type, uint8_t unit);
+void crypto_convert_to_unit(const crypto_amount_t* amount, crypto_amount_t* result, uint8_t target_unit);
+void crypto_print_amount(const crypto_amount_t* amount);
+
+// New function declarations for type-safe value setting
+void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, uint64_t fraction);
+void crypto_set_value_from_decimal(crypto_amount_t* amount, btc_unit_t unit, const char* decimal_str);
+
+// Arithmetic operation declarations
+void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
+void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
+int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b);
+
+// Implementation section
+#ifdef CRYPTOMATH_IMPLEMENTATION
+
+int crypto_is_valid_unit(crypto_type_t type, uint8_t unit) {
+    switch (type) {
+        case CRYPTO_BITCOIN:
+            return (unit < BTC_UNIT_COUNT);
+        case CRYPTO_ETHEREUM:
+            return (unit < ETH_UNIT_COUNT);
+        default:
+            return 0;
+    }
+}
+
+int crypto_is_valid_amount(const crypto_amount_t* amount) {
+    if (!amount || !amount->unit_info) {
+        return 0;
+    }
+    return crypto_is_valid_unit(amount->type, amount->unit);
+}
+
+void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit) {
+    assert(amount != NULL);
+    assert(crypto_is_valid_unit(type, unit));
+    
+    mpq_init(amount->value);
+    amount->type = type;
+    amount->unit = unit;
+    amount->unit_info = &bitcoin_units[unit];
+}
+
+void crypto_clear(crypto_amount_t* amount) {
+    assert(amount != NULL);
+    mpq_clear(amount->value);
+}
+
+void crypto_init_bitcoin(crypto_amount_t* amount, btc_unit_t unit) {
+    assert(amount != NULL);
+    assert(crypto_is_valid_unit(CRYPTO_BITCOIN, unit));
+    crypto_init(amount, CRYPTO_BITCOIN, unit);
+}
+
+void crypto_init_ethereum(crypto_amount_t* amount, eth_unit_t unit) {
+    assert(amount != NULL);
+    assert(crypto_is_valid_unit(CRYPTO_ETHEREUM, unit));
+    crypto_init(amount, CRYPTO_ETHEREUM, unit);
+}
+
+const crypto_unit_t* crypto_get_unit_info(crypto_type_t type, uint8_t unit) {
+    assert(crypto_is_valid_unit(type, unit));
+    switch (type) {
+        case CRYPTO_BITCOIN:
+            return &bitcoin_units[unit];
+        case CRYPTO_ETHEREUM:
+            return &ethereum_units[unit];
+        default:
+            return NULL;
+    }
+}
+
+void crypto_convert_to_unit(const crypto_amount_t* amount, crypto_amount_t* result, uint8_t target_unit) {
+    assert(amount != NULL);
+    assert(result != NULL);
+    assert(crypto_is_valid_amount(amount));
+    assert(crypto_is_valid_unit(amount->type, target_unit));
+    
+    crypto_init(result, amount->type, target_unit);
+    
+    // Calculate conversion factor
+    mpq_t conversion_factor;
+    mpq_init(conversion_factor);
+    
+    // Convert from source unit to base unit
+    mpq_set_ui(conversion_factor, amount->unit_info->denominator, 1);
+    mpq_mul(result->value, amount->value, conversion_factor);
+    
+    // Convert from base unit to target unit
+    const crypto_unit_t* target_unit_info = crypto_get_unit_info(amount->type, target_unit);
+    mpq_set_ui(conversion_factor, 1, target_unit_info->denominator);
+    mpq_mul(result->value, result->value, conversion_factor);
+    
+    mpq_clear(conversion_factor);
+}
+
+void crypto_print_amount(const crypto_amount_t* amount) {
+    assert(amount != NULL);
+    assert(crypto_is_valid_amount(amount));
+
+    // Convert to string with full precision
+    char* str = mpq_get_str(NULL, 10, amount->value);
+    if (!str) {
+        return;
+    }
+
+    // Find the decimal point
+    char* decimal_point = strchr(str, '.');
+    if (!decimal_point) {
+        // If no decimal point, add it
+        printf("%s.0 %s\n", str, amount->unit_info->symbol);
+    } else {
+        // Print with proper decimal places
+        printf("%.*s %s\n", 
+               (int)(strlen(decimal_point + 1) + 1),  // +1 for the decimal point
+               str,
+               amount->unit_info->symbol);
+    }
+
+    free(str);
+}
+
+void crypto_set_value(crypto_amount_t* amount, btc_unit_t unit, uint64_t whole, uint64_t fraction) {
+    assert(amount != NULL);
+    assert(crypto_is_valid_amount(amount));
+    assert(amount->type == CRYPTO_BITCOIN);
+    assert(crypto_is_valid_unit(amount->type, unit));
+    
+    // Get the unit info for the target unit
+    const crypto_unit_t* unit_info = crypto_get_unit_info(amount->type, unit);
+    
+    // Set the whole part
+    mpq_set_ui(amount->value, whole, 1);
+    
+    // Add the fraction part if provided
+    if (fraction > 0) {
+        mpq_t fraction_part;
+        mpq_init(fraction_part);
+        
+        // Calculate the denominator for the fraction based on the unit's decimals
+        uint64_t denominator = 1;
+        for (uint8_t i = 0; i < unit_info->decimals; i++) {
+            denominator *= 10;
+        }
+        
+        mpq_set_ui(fraction_part, fraction, denominator);
+        mpq_add(amount->value, amount->value, fraction_part);
+        mpq_clear(fraction_part);
+    }
+    
+    // Convert to base unit (Bitcoin)
+    mpq_t conversion_factor;
+    mpq_init(conversion_factor);
+    mpq_set_ui(conversion_factor, 1, unit_info->denominator);
+    mpq_mul(amount->value, amount->value, conversion_factor);
+    mpq_clear(conversion_factor);
+}
+
+void crypto_set_value_from_decimal(crypto_amount_t* amount, btc_unit_t unit, const char* decimal_str) {
+    assert(amount != NULL);
+    assert(decimal_str != NULL);
+    assert(crypto_is_valid_unit(CRYPTO_BITCOIN, unit));
+    
+    // Initialize the amount structure
+    amount->type = CRYPTO_BITCOIN;
+    amount->unit = unit;
+    amount->unit_info = &bitcoin_units[unit];
+    mpq_init(amount->value);
+    
+    // Parse the decimal string
+    const char* p = decimal_str;
+    int is_negative = 0;
+    
+    // Handle sign
+    if (*p == '-') {
+        is_negative = 1;
+        p++;
+    }
+    
+    // Parse whole part
+    mpz_t whole;
+    mpz_init(whole);
+    mpz_set_ui(whole, 0);
+    
+    while (*p >= '0' && *p <= '9') {
+        mpz_mul_ui(whole, whole, 10);
+        mpz_add_ui(whole, whole, *p - '0');
+        p++;
+    }
+    
+    // Parse fractional part
+    mpz_t fraction;
+    mpz_init(fraction);
+    mpz_set_ui(fraction, 0);
+    mpz_t denominator;
+    mpz_init(denominator);
+    mpz_set_ui(denominator, 1);
+    
+    if (*p == '.') {
+        p++;
+        while (*p >= '0' && *p <= '9') {
+            mpz_mul_ui(fraction, fraction, 10);
+            mpz_add_ui(fraction, fraction, *p - '0');
+            mpz_mul_ui(denominator, denominator, 10);
+            p++;
+        }
+    }
+    
+    // Combine whole and fraction
+    mpz_mul(whole, whole, denominator);
+    mpz_add(whole, whole, fraction);
+    
+    // Set the value
+    mpq_set_z(amount->value, whole);
+    mpq_set_den(amount->value, denominator);
+    
+    // Apply sign
+    if (is_negative) {
+        mpq_neg(amount->value, amount->value);
+    }
+    
+    // Clean up
+    mpz_clear(whole);
+    mpz_clear(fraction);
+    mpz_clear(denominator);
+    
+    // Only convert if the input unit is not Bitcoin
+    if (unit != BTC_UNIT_BITCOIN) {
+        mpq_t conversion_factor;
+        mpq_init(conversion_factor);
+        mpq_set_ui(conversion_factor, 1, amount->unit_info->denominator);
+        mpq_mul(amount->value, amount->value, conversion_factor);
+        mpq_clear(conversion_factor);
+    }
+}
+
+void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
+    assert(a != NULL && b != NULL && result != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);  // Can only add same crypto types
+    
+    // Initialize result with the same type and unit as a
+    crypto_init(result, a->type, a->unit);
+    
+    // Add the values
+    mpq_add(result->value, a->value, b->value);
+}
+
+void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
+    assert(a != NULL && b != NULL && result != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);  // Can only subtract same crypto types
+    
+    // Initialize result with the same type and unit as a
+    crypto_init(result, a->type, a->unit);
+    
+    // Subtract the values
+    mpq_sub(result->value, a->value, b->value);
+}
+
+int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b) {
+    assert(a != NULL && b != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);  // Can only compare same crypto types
+    
+    return mpq_cmp(a->value, b->value);
+}
+
+#endif // CRYPTOMATH_IMPLEMENTATION
+
+#endif // CRYPTOMATH_H 
