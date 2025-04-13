@@ -431,6 +431,81 @@ void test_ethereum_decimal_string_parsing() {
     crypto_clear(&amount);
 }
 
+void test_multiplication_division() {
+    printf("\n=== Testing Multiplication and Division Operations ===\n");
+    
+    // Test 1: Bitcoin multiplication (2 BTC * 0.5 BTC = 1 BTC)
+    crypto_amount_t btc1, btc2, result;
+    crypto_init_bitcoin(&btc1, BTC_UNIT_BITCOIN);
+    crypto_init_bitcoin(&btc2, BTC_UNIT_BITCOIN);
+    
+    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
+    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
+    
+    crypto_mul(&btc1, &btc2, &result);
+    verify_result("2 BTC * 0.5 BTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
+    
+    // Test 2: Bitcoin division (2 BTC / 0.5 BTC = 4 BTC)
+    crypto_div(&btc1, &btc2, &result);
+    verify_result("2 BTC / 0.5 BTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 4, 0, 0);
+    
+    // Test 3: Ethereum multiplication (2 ETH * 0.5 ETH = 1 ETH)
+    crypto_amount_t eth1, eth2;
+    crypto_init_ethereum(&eth1, ETH_UNIT_ETHER);
+    crypto_init_ethereum(&eth2, ETH_UNIT_ETHER);
+    
+    crypto_set_value(&eth1, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2, 0);      // 2.0 ETH
+    crypto_set_value(&eth2, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000);  // 0.5 ETH
+    
+    crypto_mul(&eth1, &eth2, &result);
+    verify_result("2 ETH * 0.5 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0, 0);
+    
+    // Test 4: Ethereum division (2 ETH / 0.5 ETH = 4 ETH)
+    crypto_div(&eth1, &eth2, &result);
+    verify_result("2 ETH / 0.5 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 4, 0, 0);
+    
+    // Test 5: In-place multiplication (2 BTC *= 0.5 BTC = 1 BTC)
+    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
+    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
+    
+    crypto_mul_inplace(&btc1, &btc2);
+    verify_result("2 BTC *= 0.5 BTC", &btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
+    
+    // Test 6: In-place division (1 BTC /= 0.5 BTC = 2 BTC)
+    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);      // 1.0 BTC
+    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
+    
+    crypto_div_inplace(&btc1, &btc2);
+    verify_result("1 BTC /= 0.5 BTC", &btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0, 0);
+    
+    // Test 7: Different units multiplication (2 BTC * 500 mBTC = 1 BTC)
+    crypto_amount_t mbtc;
+    crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
+    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
+    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 500, 0);   // 0.5 BTC in mBTC
+    
+    crypto_mul(&btc1, &mbtc, &result);
+    verify_result("2 BTC * 500 mBTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
+    
+    // Test 8: Different units division (1 ETH / 500 GWEI = 2 ETH)
+    crypto_amount_t gwei;
+    crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
+    crypto_set_value(&eth1, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1.0 ETH
+    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 500, 0);     // 0.5 ETH in GWEI
+    
+    crypto_div(&eth1, &gwei, &result);
+    verify_result("1 ETH / 500 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2000000, 0, 0);
+    
+    // Cleanup
+    crypto_clear(&btc1);
+    crypto_clear(&btc2);
+    crypto_clear(&eth1);
+    crypto_clear(&eth2);
+    crypto_clear(&mbtc);
+    crypto_clear(&gwei);
+    crypto_clear(&result);
+}
+
 int main() {
     printf("Starting Cryptomath Test Suite\n");
     
@@ -443,6 +518,7 @@ int main() {
     test_ethereum_arithmetic();
     test_decimal_string_parsing();
     test_ethereum_decimal_string_parsing();
+    test_multiplication_division();
     
     printf("\nTest Suite Summary:\n");
     printf("Total Tests: %d\n", total_tests);

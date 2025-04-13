@@ -119,6 +119,12 @@ void crypto_add_inplace(crypto_amount_t* a, const crypto_amount_t* b);
 void crypto_sub_inplace(crypto_amount_t* a, const crypto_amount_t* b);
 int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b);
 
+// Multiplication and division operations
+void crypto_mul(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
+void crypto_div(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
+void crypto_mul_inplace(crypto_amount_t* a, const crypto_amount_t* b);
+void crypto_div_inplace(crypto_amount_t* a, const crypto_amount_t* b);
+
 // Implementation section
 #ifdef CRYPTOMATH_IMPLEMENTATION
 
@@ -417,6 +423,66 @@ int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b) {
     assert(a->type == b->type);  // Can only compare same crypto types
     
     return mpq_cmp(a->value, b->value);
+}
+
+void crypto_mul(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
+    assert(a != NULL && b != NULL && result != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);  // Can only multiply same crypto types
+    
+    // Initialize result with the same type and unit as a
+    crypto_init(result, a->type, a->unit);
+    
+    // Multiply the values
+    mpq_mul(result->value, a->value, b->value);
+}
+
+void crypto_div(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
+    assert(a != NULL && b != NULL && result != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);  // Can only divide same crypto types
+    
+    // Initialize result with the same type and unit as a
+    crypto_init(result, a->type, a->unit);
+    
+    // Divide the values
+    mpq_div(result->value, a->value, b->value);
+}
+
+void crypto_mul_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
+    assert(a != NULL && b != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);
+    
+    // Create a temporary result to avoid issues when a == b
+    mpq_t temp;
+    mpq_init(temp);
+    // Multiply the values
+    mpq_mul(temp, a->value, b->value);
+    
+    // Copy the result back to a
+    mpq_set(a->value, temp);
+    
+    // Clean up the temporary
+    mpq_clear(temp);
+}
+
+void crypto_div_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
+    assert(a != NULL && b != NULL);
+    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
+    assert(a->type == b->type);
+    
+    // Create a temporary result to avoid issues when a == b
+    mpq_t temp;
+    mpq_init(temp);
+    // Divide the values
+    mpq_div(temp, a->value, b->value);
+    
+    // Copy the result back to a
+    mpq_set(a->value, temp);
+    
+    // Clean up the temporary
+    mpq_clear(temp);
 }
 
 #endif // CRYPTOMATH_IMPLEMENTATION
