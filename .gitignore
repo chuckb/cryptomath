@@ -1,2 +1,4 @@
 *.o
+*.d
 test_cryptomath
+test_cryptomath2
