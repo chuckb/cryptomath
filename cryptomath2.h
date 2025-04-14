@@ -1,16 +1,35 @@
 #ifndef CRYPTOMATH2_H
 #define CRYPTOMATH2_H
 
+/*
+ * Copyright (c) 2025 Charles Benedict, Jr.
+ * See LICENSE.md for licensing information.
+ */
+
 #include <gmp.h>
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
 
+// TODO: Perhaps this metadata could be stored in a database or file?
+// If so, how could we make it type safe?
+// Perhaps codegen from a schema?
+// Load into a hash table?
 // Enumeration of supported cryptocurrencies
 typedef enum {
     CRYPTO_BITCOIN,
     CRYPTO_ETHEREUM,
+    CRYPTO_BINANCE_COIN,
+    CRYPTO_SOLANA,
+    CRYPTO_XRP,
+    CRYPTO_CARDANO,
+    CRYPTO_AVALANCHE,
+    CRYPTO_DOGECOIN,
+    CRYPTO_POLKADOT,
+    CRYPTO_POLYGON,
+    CRYPTO_USDC,
+    CRYPTO_USDT,
     // Add more cryptocurrencies here as needed
     CRYPTO_COUNT  // Keep this as the last entry
 } crypto_type_t;
@@ -23,6 +42,26 @@ typedef enum {
     ETH_DENOM_ETHER,
     ETH_DENOM_GWEI,
     ETH_DENOM_WEI,
+    BNB_DENOM_BNB,
+    BNB_DENOM_JAGER,
+    SOL_DENOM_SOL,
+    SOL_DENOM_LAMPORT,
+    XRP_DENOM_XRP,
+    XRP_DENOM_DROP,
+    ADA_DENOM_ADA,
+    ADA_DENOM_LOVELACE,
+    AVAX_DENOM_AVAX,
+    AVAX_DENOM_NAVAX,
+    DOGE_DENOM_DOGE,
+    DOGE_DENOM_SATOSHI,
+    DOT_DENOM_DOT,
+    DOT_DENOM_PLANCK,
+    MATIC_DENOM_MATIC,
+    MATIC_DENOM_WEI,
+    USDC_DENOM_USDC,
+    USDC_DENOM_MICROUSDC,
+    USDT_DENOM_USDT,
+    USDT_DENOM_MICROUSDT,
     DENOM_COUNT  // Keep this as the last entry
 } crypto_denom_t;
 
@@ -81,6 +120,126 @@ static const crypto_def_t crypto_denoms[] = {
         .symbol = "WEI",
         .crypto_type = CRYPTO_ETHEREUM,
         .decimals = 0
+    },
+    [BNB_DENOM_BNB] = {
+        .name = "Binance Coin",
+        .symbol = "BNB",
+        .crypto_type = CRYPTO_BINANCE_COIN,
+        .decimals = 18
+    },
+    [BNB_DENOM_JAGER] = {
+        .name = "Jager",
+        .symbol = "JAGER",
+        .crypto_type = CRYPTO_BINANCE_COIN,
+        .decimals = 0
+    },
+    [SOL_DENOM_SOL] = {
+        .name = "Solana",
+        .symbol = "SOL",
+        .crypto_type = CRYPTO_SOLANA,
+        .decimals = 9
+    },
+    [SOL_DENOM_LAMPORT] = {
+        .name = "Lamport",
+        .symbol = "LAMP",
+        .crypto_type = CRYPTO_SOLANA,
+        .decimals = 0
+    },
+    [XRP_DENOM_XRP] = {
+        .name = "XRP",
+        .symbol = "XRP",
+        .crypto_type = CRYPTO_XRP,
+        .decimals = 6
+    },
+    [XRP_DENOM_DROP] = {
+        .name = "Drop",
+        .symbol = "DROP",
+        .crypto_type = CRYPTO_XRP,
+        .decimals = 0
+    },
+    [ADA_DENOM_ADA] = {
+        .name = "Cardano",
+        .symbol = "ADA",
+        .crypto_type = CRYPTO_CARDANO,
+        .decimals = 6
+    },
+    [ADA_DENOM_LOVELACE] = {
+        .name = "Lovelace",
+        .symbol = "LOVELACE",
+        .crypto_type = CRYPTO_CARDANO,
+        .decimals = 0
+    },
+    [AVAX_DENOM_AVAX] = {
+        .name = "Avalanche",
+        .symbol = "AVAX",
+        .crypto_type = CRYPTO_AVALANCHE,
+        .decimals = 18
+    },
+    [AVAX_DENOM_NAVAX] = {
+        .name = "nAVAX",
+        .symbol = "nAVAX",
+        .crypto_type = CRYPTO_AVALANCHE,
+        .decimals = 0
+    },
+    [DOGE_DENOM_DOGE] = {
+        .name = "Dogecoin",
+        .symbol = "DOGE",
+        .crypto_type = CRYPTO_DOGECOIN,
+        .decimals = 8
+    },
+    [DOGE_DENOM_SATOSHI] = {
+        .name = "Satoshi",
+        .symbol = "SAT",
+        .crypto_type = CRYPTO_DOGECOIN,
+        .decimals = 0
+    },
+    [DOT_DENOM_DOT] = {
+        .name = "Polkadot",
+        .symbol = "DOT",
+        .crypto_type = CRYPTO_POLKADOT,
+        .decimals = 10
+    },
+    [DOT_DENOM_PLANCK] = {
+        .name = "Planck",
+        .symbol = "PLANCK",
+        .crypto_type = CRYPTO_POLKADOT,
+        .decimals = 0
+    },
+    [MATIC_DENOM_MATIC] = {
+        .name = "Polygon",
+        .symbol = "MATIC",
+        .crypto_type = CRYPTO_POLYGON,
+        .decimals = 18
+    },
+    [MATIC_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_POLYGON,
+        .decimals = 0
+    },
+    [USDC_DENOM_USDC] = {
+        .name = "USD Coin",
+        .symbol = "USDC",
+        .crypto_type = CRYPTO_USDC,
+        .decimals = 6
+    },
+    [USDC_DENOM_MICROUSDC] = {
+        .name = "Micro USD Coin",
+        .symbol = "μUSDC",
+        .crypto_type = CRYPTO_USDC,
+        .decimals = 0
+    },
+    [USDT_DENOM_USDT] = {
+        .name = "Tether",
+        .symbol = "USDT",
+        .crypto_type = CRYPTO_USDT,
+        .decimals = 6
+    },
+    [USDT_DENOM_MICROUSDT] = {
+        .name = "Micro Tether",
+        .symbol = "μUSDT",
+        .crypto_type = CRYPTO_USDT,
+        .decimals = 0
     }
 };
 
@@ -89,7 +248,6 @@ int crypto_is_valid_denom(crypto_denom_t denom);
 void crypto_init(crypto_val_t* val, crypto_type_t type);
 void crypto_clear(crypto_val_t* val);
 void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char* decimal_str);
-//void crypto_set_from_uint64(crypto_val_t* val, crypto_denom_t denom, uint64_t whole, uint64_t fraction, bool is_negative);
 char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom);
 void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
 void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);

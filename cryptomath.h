@@ -10,6 +10,14 @@
 typedef enum {
     CRYPTO_BITCOIN,
     CRYPTO_ETHEREUM,
+    CRYPTO_TETHER,
+    CRYPTO_BNB,
+    CRYPTO_SOLANA,
+    CRYPTO_XRP,
+    CRYPTO_USDC,
+    CRYPTO_CARDANO,
+    CRYPTO_AVALANCHE,
+    CRYPTO_DOGECOIN,
     // Add more cryptocurrencies here as needed
     CRYPTO_COUNT  // Keep this as the last entry
 } crypto_type_t;
@@ -97,6 +105,146 @@ static const crypto_unit_t ethereum_units[] = {
     }
 };
 
+// Tether unit definitions
+static const crypto_unit_t tether_units[] = {
+    [USDT_UNIT_USDT] = {
+        .name = "Tether",
+        .symbol = "USDT",
+        .denominator = 1ULL,
+        .decimals = 6
+    },
+    [USDT_UNIT_MICROUSDT] = {
+        .name = "Microtether",
+        .symbol = "μUSDT",
+        .denominator = 1000000ULL,
+        .decimals = 0
+    }
+};
+
+// BNB unit definitions
+static const crypto_unit_t bnb_units[] = {
+    [BNB_UNIT_BNB] = {
+        .name = "BNB",
+        .symbol = "BNB",
+        .denominator = 1ULL,
+        .decimals = 18
+    },
+    [BNB_UNIT_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .denominator = 1000000000ULL,
+        .decimals = 9
+    },
+    [BNB_UNIT_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .denominator = 1000000000000000000ULL,
+        .decimals = 0
+    }
+};
+
+// Solana unit definitions
+static const crypto_unit_t solana_units[] = {
+    [SOL_UNIT_SOL] = {
+        .name = "Solana",
+        .symbol = "SOL",
+        .denominator = 1ULL,
+        .decimals = 9
+    },
+    [SOL_UNIT_LAMPORT] = {
+        .name = "Lamport",
+        .symbol = "LAMP",
+        .denominator = 1000000000ULL,
+        .decimals = 0
+    }
+};
+
+// XRP unit definitions
+static const crypto_unit_t xrp_units[] = {
+    [XRP_UNIT_XRP] = {
+        .name = "XRP",
+        .symbol = "XRP",
+        .denominator = 1ULL,
+        .decimals = 6
+    },
+    [XRP_UNIT_DROP] = {
+        .name = "Drop",
+        .symbol = "DROP",
+        .denominator = 1000000ULL,
+        .decimals = 0
+    }
+};
+
+// USDC unit definitions
+static const crypto_unit_t usdc_units[] = {
+    [USDC_UNIT_USDC] = {
+        .name = "USDC",
+        .symbol = "USDC",
+        .denominator = 1ULL,
+        .decimals = 6
+    },
+    [USDC_UNIT_MICROUSDC] = {
+        .name = "MicroUSDC",
+        .symbol = "μUSDC",
+        .denominator = 1000000ULL,
+        .decimals = 0
+    }
+};
+
+// Cardano unit definitions
+static const crypto_unit_t cardano_units[] = {
+    [ADA_UNIT_ADA] = {
+        .name = "Cardano",
+        .symbol = "ADA",
+        .denominator = 1ULL,
+        .decimals = 6
+    },
+    [ADA_UNIT_LOVELACE] = {
+        .name = "Lovelace",
+        .symbol = "LOVELACE",
+        .denominator = 1000000ULL,
+        .decimals = 0
+    }
+};
+
+// Avalanche unit definitions
+static const crypto_unit_t avalanche_units[] = {
+    [AVAX_UNIT_AVAX] = {
+        .name = "Avalanche",
+        .symbol = "AVAX",
+        .denominator = 1ULL,
+        .decimals = 18
+    },
+    [AVAX_UNIT_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .denominator = 1000000000ULL,
+        .decimals = 9
+    },
+    [AVAX_UNIT_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .denominator = 1000000000000000000ULL,
+        .decimals = 0
+    }
+};
+
+// Dogecoin unit definitions
+static const crypto_unit_t dogecoin_units[] = {
+    [DOGE_UNIT_DOGE] = {
+        .name = "Dogecoin",
+        .symbol = "DOGE",
+        .denominator = 1ULL,
+        .decimals = 8
+    },
+    [DOGE_UNIT_SATOSHI] = {
+        .name = "Satoshi",
+        .symbol = "SAT",
+        .denominator = 100000000ULL,
+        .decimals = 0
+    }
+};
+
 // Function declarations
 int crypto_is_valid_unit(crypto_type_t type, uint8_t unit);
 int crypto_is_valid_amount(const crypto_amount_t* amount);
@@ -134,6 +282,22 @@ int crypto_is_valid_unit(crypto_type_t type, uint8_t unit) {
             return (unit < BTC_UNIT_COUNT);
         case CRYPTO_ETHEREUM:
             return (unit < ETH_UNIT_COUNT);
+        case CRYPTO_TETHER:
+            return (unit < USDT_UNIT_COUNT);
+        case CRYPTO_BNB:
+            return (unit < BNB_UNIT_COUNT);
+        case CRYPTO_SOLANA:
+            return (unit < SOL_UNIT_COUNT);
+        case CRYPTO_XRP:
+            return (unit < XRP_UNIT_COUNT);
+        case CRYPTO_USDC:
+            return (unit < USDC_UNIT_COUNT);
+        case CRYPTO_CARDANO:
+            return (unit < ADA_UNIT_COUNT);
+        case CRYPTO_AVALANCHE:
+            return (unit < AVAX_UNIT_COUNT);
+        case CRYPTO_DOGECOIN:
+            return (unit < DOGE_UNIT_COUNT);
         default:
             return 0;
     }
@@ -159,6 +323,30 @@ void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit) {
             break;
         case CRYPTO_ETHEREUM:
             amount->unit_info = &ethereum_units[unit];
+            break;
+        case CRYPTO_TETHER:
+            amount->unit_info = &tether_units[unit];
+            break;
+        case CRYPTO_BNB:
+            amount->unit_info = &bnb_units[unit];
+            break;
+        case CRYPTO_SOLANA:
+            amount->unit_info = &solana_units[unit];
+            break;
+        case CRYPTO_XRP:
+            amount->unit_info = &xrp_units[unit];
+            break;
+        case CRYPTO_USDC:
+            amount->unit_info = &usdc_units[unit];
+            break;
+        case CRYPTO_CARDANO:
+            amount->unit_info = &cardano_units[unit];
+            break;
+        case CRYPTO_AVALANCHE:
+            amount->unit_info = &avalanche_units[unit];
+            break;
+        case CRYPTO_DOGECOIN:
+            amount->unit_info = &dogecoin_units[unit];
             break;
         default:
             assert(0);  // Invalid crypto type
@@ -189,6 +377,22 @@ const crypto_unit_t* crypto_get_unit_info(crypto_type_t type, uint8_t unit) {
             return &bitcoin_units[unit];
         case CRYPTO_ETHEREUM:
             return &ethereum_units[unit];
+        case CRYPTO_TETHER:
+            return &tether_units[unit];
+        case CRYPTO_BNB:
+            return &bnb_units[unit];
+        case CRYPTO_SOLANA:
+            return &solana_units[unit];
+        case CRYPTO_XRP:
+            return &xrp_units[unit];
+        case CRYPTO_USDC:
+            return &usdc_units[unit];
+        case CRYPTO_CARDANO:
+            return &cardano_units[unit];
+        case CRYPTO_AVALANCHE:
+            return &avalanche_units[unit];
+        case CRYPTO_DOGECOIN:
+            return &dogecoin_units[unit];
         default:
             return NULL;
     }
