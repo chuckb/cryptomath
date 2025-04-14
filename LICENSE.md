@@ -1,4 +1,5 @@
 MIT License with Commercial Use Clause
+(Modified from the MIT License - https://opensource.org/license/mit/)
 
 Copyright (c) 2025 Charles Benedict, Jr.
 
