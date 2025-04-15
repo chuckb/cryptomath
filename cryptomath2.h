@@ -33,6 +33,10 @@ typedef enum {
     CRYPTO_POLYGON,
     CRYPTO_USDC,
     CRYPTO_USDT,
+    CRYPTO_FLARE,
+    CRYPTO_SONGBIRD,
+    CRYPTO_WFLR,
+    CRYPTO_WSGB,
     // Add more cryptocurrencies here as needed
     CRYPTO_COUNT  // Keep this as the last entry
 } crypto_type_t;
@@ -65,6 +69,18 @@ typedef enum {
     USDC_DENOM_MICROUSDC,
     USDT_DENOM_USDT,
     USDT_DENOM_MICROUSDT,
+    FLR_DENOM_FLR,
+    FLR_DENOM_GWEI,
+    FLR_DENOM_WEI,
+    SGB_DENOM_SGB,
+    SGB_DENOM_GWEI,
+    SGB_DENOM_WEI,
+    WFLR_DENOM_WFLR,
+    WFLR_DENOM_GWEI,
+    WFLR_DENOM_WEI,
+    WSGB_DENOM_WSGB,
+    WSGB_DENOM_GWEI,
+    WSGB_DENOM_WEI,
     DENOM_COUNT  // Keep this as the last entry
 } crypto_denom_t;
 
@@ -241,6 +257,78 @@ static const crypto_def_t crypto_denoms[] = {
         .name = "Micro Tether",
         .symbol = "μUSDT",
         .crypto_type = CRYPTO_USDT,
+        .decimals = 0
+    },
+    [FLR_DENOM_FLR] = {
+        .name = "Flare",
+        .symbol = "FLR",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 18
+    },
+    [FLR_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 9
+    },
+    [FLR_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 0
+    },
+    [SGB_DENOM_SGB] = {
+        .name = "Songbird",
+        .symbol = "SGB",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 18
+    },
+    [SGB_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 9
+    },
+    [SGB_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 0
+    },
+    [WFLR_DENOM_WFLR] = {
+        .name = "Wrapped Flare",
+        .symbol = "WFLR",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 18
+    },
+    [WFLR_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 9
+    },
+    [WFLR_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 0
+    },
+    [WSGB_DENOM_WSGB] = {
+        .name = "Wrapped Songbird",
+        .symbol = "WSGB",
+        .crypto_type = CRYPTO_WSGB,
+        .decimals = 18
+    },
+    [WSGB_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_WSGB,
+        .decimals = 9
+    },
+    [WSGB_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_WSGB,
         .decimals = 0
     }
 };
