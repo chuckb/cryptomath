@@ -79,6 +79,28 @@ static void sigfpe_handler(int signo) {
         signal(SIGFPE, SIG_DFL);                                     \
     } while (0)
 
+// Helper macro for testing valid decimal strings
+#define TEST_VALID_DECIMAL(str) do { \
+    total_tests++; \
+    if (!crypto_is_valid_decimal(str)) { \
+        printf("FAIL: Valid decimal '%s' was rejected\n", str); \
+        failed_tests++; \
+    } else { \
+        passed_tests++; \
+    } \
+} while(0)
+
+// Helper macro for testing invalid decimal strings
+#define TEST_INVALID_DECIMAL(str) do { \
+    total_tests++; \
+    if (crypto_is_valid_decimal(str)) { \
+        printf("FAIL: Invalid decimal '%s' was accepted\n", str); \
+        failed_tests++; \
+    } else { \
+        passed_tests++; \
+    } \
+} while(0)
+
 void verify_string_parsing(crypto_val_t* val, const char* expected_val_as_str) {
     total_tests++;
     char* str = mpz_get_str(NULL, 10, val->value);
@@ -429,6 +451,31 @@ void test_multiplication_division() {
     crypto_clear(&result);
 }
 
+void test_decimal_validation() {
+    printf("\n=== Testing Decimal Validation ===\n");
+    
+    // Test valid cases
+    TEST_VALID_DECIMAL("123.45");
+    TEST_VALID_DECIMAL("  -123.45  ");
+    TEST_VALID_DECIMAL("+123");
+    TEST_VALID_DECIMAL("123");
+    TEST_VALID_DECIMAL("0.123");
+
+    // Test invalid cases
+    TEST_INVALID_DECIMAL("123.45.67");
+    TEST_INVALID_DECIMAL("abc");
+    TEST_INVALID_DECIMAL("123abc");
+    TEST_INVALID_DECIMAL("  ");
+    TEST_INVALID_DECIMAL("+");
+    TEST_INVALID_DECIMAL("123 456");
+
+    // Test edge cases
+    TEST_VALID_DECIMAL(".01");
+    TEST_VALID_DECIMAL("0.01");
+    TEST_VALID_DECIMAL("-.01");
+    TEST_VALID_DECIMAL("-0.01");
+}
+
 int main() {
     printf("Starting Cryptomath Test Suite\n");
 
@@ -438,6 +485,7 @@ int main() {
     test_comparison_operations();
     test_zero_comparison();
     test_multiplication_division();
+    test_decimal_validation();
     printf("\nTest Suite Summary:\n");
     printf("Total Tests: %d\n", total_tests);
     printf("Passed: %d\n", passed_tests);

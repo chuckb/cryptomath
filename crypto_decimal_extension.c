@@ -30,7 +30,7 @@ static void crypto_add_sqlite(
 ){
     // Expect 3 args
     if (argc != 3) {
-        sqlite3_result_error(context, "crypto_add requires three arguments", -1);
+        sqlite3_result_error(context, "crypto_add requires three arguments (denomination, operand1, operand2)", -1);
         return;
     }
 
@@ -46,7 +46,7 @@ static void crypto_add_sqlite(
     // Get the denom for the first arg
     crypto_denom_t denom = crypto_get_denom_for_symbol((const char*)arg0);
     if (denom == DENOM_COUNT) {
-        sqlite3_result_error(context, "Invalid denomination", -1);
+        sqlite3_result_error(context, "crypto_add: Invalid denomination", -1);
         return;
     }
     // Get crypto_type for the first arg
@@ -57,22 +57,25 @@ static void crypto_add_sqlite(
     crypto_init(&a, crypto_type);
     crypto_init(&b, crypto_type);
 
+    // Validate the first operand
+    if (!crypto_is_valid_decimal((const char*)arg1)) {
+        crypto_clear(&a); 
+        crypto_clear(&b);
+        sqlite3_result_error(context, "crypto_add: Invalid decimal format for first operand", -1);
+        return;
+    }
     // Parse the first operand into crypto_val_t
     crypto_set_from_decimal(&a, denom, (const char*)arg1);
-//    if (crypto_set_from_decimal(&a, denom, (const char*)arg1)) {
-//        crypto_clear(&a); 
-//        crypto_clear(&b);
-//        sqlite3_result_error(context, "Invalid decimal format for first arg", -1);
-//       return;
-//    }
+
+    // Validate the second operand
+    if (!crypto_is_valid_decimal((const char*)arg2)) {
+        crypto_clear(&a); 
+        crypto_clear(&b);
+        sqlite3_result_error(context, "crypto_add: Invalid decimal format for second operand", -1);
+        return;
+    }
     // Parse the second operand into crypto_val_t
     crypto_set_from_decimal(&b, denom, (const char*)arg2);
-//    if (crypto_set_from_decimal(&b, denom, (const char*)arg2)) {
-//        crypto_clear(&a);
-//        crypto_clear(&b);
-//        sqlite3_result_error(context, "Invalid decimal format for second arg", -1);
-//        return;
-//    }
 
     // Add
     crypto_add(&a, &b, &a); // store result in a
@@ -83,7 +86,7 @@ static void crypto_add_sqlite(
     crypto_clear(&a);
 
     if (!resultStr) {
-        sqlite3_result_error(context, "Could not convert result to string", -1);
+        sqlite3_result_error(context, "crypto_add: Could not convert result to string", -1);
         return;
     }
 
@@ -103,7 +106,7 @@ static void crypto_scale_sqlite(
 ){
     // Expect 3 args
     if (argc != 3) {
-        sqlite3_result_error(context, "crypto_scale requires three arguments", -1);
+        sqlite3_result_error(context, "crypto_scale requires three arguments (from_denom, to_denom, operand)", -1);
         return;
     }
 
@@ -119,7 +122,7 @@ static void crypto_scale_sqlite(
     // Get the denom for the first arg
     crypto_denom_t from_denom = crypto_get_denom_for_symbol((const char*)arg0);
     if (from_denom == DENOM_COUNT) {
-        sqlite3_result_error(context, "Invalid from denomination", -1);
+        sqlite3_result_error(context, "crypto_scale: Invalid from denomination", -1);
         return;
     }
     // Get crypto_type for the first arg
@@ -128,7 +131,7 @@ static void crypto_scale_sqlite(
     // Get the denom for the second arg
     crypto_denom_t to_denom = crypto_get_denom_for_symbol((const char*)arg1);
     if (to_denom == DENOM_COUNT) {
-        sqlite3_result_error(context, "Invalid to denomination", -1);
+        sqlite3_result_error(context, "crypto_scale: Invalid to denomination", -1);
         return;
     }
     // Get crypto_type for the second arg
@@ -136,7 +139,7 @@ static void crypto_scale_sqlite(
 
     // Types must match
     if (from_type != to_type) {
-        sqlite3_result_error(context, "From and to crypto types must match", -1);
+        sqlite3_result_error(context, "crypto_scale: From and to crypto types must match", -1);
         return;
     }
 
@@ -150,7 +153,7 @@ static void crypto_scale_sqlite(
     crypto_clear(&a);
 
     if (!resultStr) {
-        sqlite3_result_error(context, "Could not convert result to string", -1);
+        sqlite3_result_error(context, "crypto_scale: Could not convert result to string", -1);
         return;
     }
 

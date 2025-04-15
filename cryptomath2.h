@@ -13,6 +13,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdbool.h>
+#include <ctype.h>
 
 // TODO: Perhaps this metadata could be stored in a database or file?
 // If so, how could we make it type safe?
@@ -259,6 +260,7 @@ int crypto_gt_zero(const crypto_val_t* a);
 int crypto_lt_zero(const crypto_val_t* a);
 int crypto_eq_zero(const crypto_val_t* a);
 crypto_denom_t crypto_get_denom_for_symbol(const char* symbol);
+bool crypto_is_valid_decimal(const char* str);
 
 // Implementation section
 #ifdef CRYPTOMATH2_IMPLEMENTATION
@@ -487,6 +489,55 @@ crypto_denom_t crypto_get_denom_for_symbol(const char* symbol) {
         }
     }
     return DENOM_COUNT;
+}
+
+bool crypto_is_valid_decimal(const char* str) {
+    if (!str) return false;
+    
+    // Skip leading whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+        str++;
+    }
+    
+    // Check for empty string after whitespace
+    if (*str == '\0') return false;
+    
+    // Check for optional sign
+    if (*str == '+' || *str == '-') {
+        str++;
+    }
+    
+    // Must have at least one digit or decimal point
+    if (!isdigit(*str) && *str != '.') return false;
+    
+    bool has_decimal = *str == '.' ? true : false;
+    bool has_digit = isdigit(*str) ? true : false;
+    
+    str++;
+    
+    // Process the rest of the string
+    while (*str != '\0') {
+        if (*str == '.') {
+            if (has_decimal) return false; // More than one decimal point
+            has_decimal = true;
+        } else if (isdigit(*str)) {
+            has_digit = true;
+        } else if (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+            // Skip trailing whitespace
+            str++;
+            while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+                str++;
+            }
+            // If we hit non-whitespace after trailing whitespace, invalid
+            if (*str != '\0') return false;
+            break;
+        } else {
+            return false; // Invalid character
+        }
+        str++;
+    }
+    
+    return has_digit; // Must have at least one digit
 }
 
 #endif // CRYPTOMATH2_IMPLEMENTATION
