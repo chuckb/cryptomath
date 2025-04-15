@@ -90,13 +90,88 @@ typedef struct {
 } crypto_val_t;
 
 typedef struct {
-    const char* name;          // Human-readable name
-    const char* symbol;        // Symbol (e.g., "BTC", "SAT")
-    crypto_type_t crypto_type; // Type of cryptocurrency
-    uint8_t decimals;          // Number of decimal places
+    crypto_type_t crypto_type;   // Type of cryptocurrency
+    const char* name;            // Human-readable name of cryptocurrency
+    const char* symbol;          // Symbol of cryptocurrency
 } crypto_def_t;
 
-static const crypto_def_t crypto_denoms[] = {
+typedef struct {
+    const char* name;          // Human-readable name of denomination
+    const char* symbol;        // Denomination symbol (e.g., "BTC", "SAT")
+    crypto_type_t crypto_type; // Type of cryptocurrency
+    uint8_t decimals;          // Number of decimal places
+} crypto_denom_def_t;
+
+// Array of cryptocurrency definitions
+static const crypto_def_t crypto_defs[] = {
+    [CRYPTO_BITCOIN] = {
+        .name = "Bitcoin",
+        .symbol = "BTC"
+    },
+    [CRYPTO_ETHEREUM] = {
+        .name = "Ethereum",
+        .symbol = "ETH"
+    },
+    [CRYPTO_BINANCE_COIN] = {
+        .name = "Binance Coin",
+        .symbol = "BNB"
+    },
+    [CRYPTO_SOLANA] = {
+        .name = "Solana",
+        .symbol = "SOL"
+    },
+    [CRYPTO_XRP] = {
+        .name = "XRP",
+        .symbol = "XRP"
+    },
+    [CRYPTO_CARDANO] = {
+        .name = "Cardano",
+        .symbol = "ADA"
+    },
+    [CRYPTO_AVALANCHE] = {
+        .name = "Avalanche",
+        .symbol = "AVAX"
+    },
+    [CRYPTO_DOGECOIN] = {
+        .name = "Dogecoin",
+        .symbol = "DOGE"
+    },
+    [CRYPTO_POLKADOT] = {
+        .name = "Polkadot",
+        .symbol = "DOT"
+    },
+    [CRYPTO_POLYGON] = {
+        .name = "Polygon",
+        .symbol = "MATIC"
+    },
+    [CRYPTO_USDC] = {
+        .name = "USD Coin",
+        .symbol = "USDC"
+    },
+    [CRYPTO_USDT] = {
+        .name = "Tether",
+        .symbol = "USDT"
+    },
+    [CRYPTO_FLARE] = {
+        .name = "Flare",
+        .symbol = "FLR"
+    },
+    [CRYPTO_SONGBIRD] = {
+        .name = "Songbird",
+        .symbol = "SGB"
+    },
+    [CRYPTO_WFLR] = {
+        .name = "Wrapped Flare",
+        .symbol = "WFLR"
+    },
+    [CRYPTO_WSGB] = {
+        .name = "Wrapped Songbird",
+        .symbol = "WSGB"
+    }
+};
+
+// Array of cryptocurrency denomination definitions
+static const crypto_denom_def_t crypto_denoms[] = {
     [BTC_DENOM_BITCOIN] = {
         .name = "Bitcoin",
         .symbol = "BTC",
@@ -347,7 +422,8 @@ int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b);
 int crypto_gt_zero(const crypto_val_t* a);
 int crypto_lt_zero(const crypto_val_t* a);
 int crypto_eq_zero(const crypto_val_t* a);
-crypto_denom_t crypto_get_denom_for_symbol(const char* symbol);
+crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbol);
+crypto_type_t crypto_get_type_for_symbol(const char* symbol);
 bool crypto_is_valid_decimal(const char* str);
 
 // Implementation section
@@ -570,9 +646,9 @@ int crypto_eq_zero(const crypto_val_t* a) {
 
 // Get the denom for a given symbol.
 // Returns DENOM_COUNT if the symbol is not found.
-crypto_denom_t crypto_get_denom_for_symbol(const char* symbol) {
+crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbol) {
     for (int i = 0; i < DENOM_COUNT; i++) {
-        if (strcmp(symbol, crypto_denoms[i].symbol) == 0) {
+        if (crypto_denoms[i].crypto_type == type && strcmp(symbol, crypto_denoms[i].symbol) == 0) {
             return i;
         }
     }
@@ -626,6 +702,17 @@ bool crypto_is_valid_decimal(const char* str) {
     }
     
     return has_digit; // Must have at least one digit
+}
+
+// Get the type for a given symbol.
+// Returns CRYPTO_COUNT if the symbol is not found.
+crypto_type_t crypto_get_type_for_symbol(const char* symbol) {
+    for (int i = 0; i < CRYPTO_COUNT; i++) {
+        if (strcmp(symbol, crypto_defs[i].symbol) == 0) {
+            return i;
+        }
+    }
+    return CRYPTO_COUNT;
 }
 
 #endif // CRYPTOMATH2_IMPLEMENTATION
