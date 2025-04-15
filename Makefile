@@ -1,7 +1,11 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -g -O2
 DEBUG_CFLAGS = -Wall -Wextra -ggdb -O0 -MMD -MP
-LDFLAGS = -lgmp
+# Works on macOS - Homebrew cask
+# Note that native sqlite3 on macOS does not have the .load function enabled
+LDFLAGS = -I/usr/local/opt/sqlite3/include -L/usr/local/opt/sqlite3/lib -lgmp -lsqlite3
+# Works on Linux
+#LDFLAGS = -I/usr/include/sqlite3 -L/usr/lib/x86_64-linux-gnu -lgmp
 
 # Define the source files
 SRCS = test_cryptomath2.c
@@ -11,9 +15,10 @@ DEBUG_OBJS = $(SRCS:.c=.debug.o)
 
 # Define the target executable
 TARGET = test_cryptomath2
+SQLITE_EXT = crypto_decimal_extension.dylib
 
 # Default target
-all: $(TARGET)
+all: $(TARGET) $(SQLITE_EXT)
 
 debug: CFLAGS = $(DEBUG_CFLAGS)
 debug: $(TARGET)
@@ -22,13 +27,18 @@ debug: $(TARGET)
 $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
+# Build the SQLite extension
+$(SQLITE_EXT): crypto_decimal_extension.c cryptomath2.h
+#	$(CC) -fPIC -shared $(CFLAGS) -o $@ $< $(LDFLAGS) -lsqlite3 -lm
+	$(CC) -fPIC -dynamiclib $(CFLAGS) -o $@ $< $(LDFLAGS)
+
 # Compile source files
 %.o: %.c cryptomath2.h
 	$(CC) $(CFLAGS) -c $<
 
 # Clean up
 clean:
-	rm -f $(OBJS) $(TARGET) $(DEPS) $(DEBUG_OBJS)
+	rm -f $(OBJS) $(TARGET) $(DEPS) $(DEBUG_OBJS) $(SQLITE_EXT)
 
 # Include auto-generated dependencies, but do not error if they don't exist yet:
 -include $(DEPS)

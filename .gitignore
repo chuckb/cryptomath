@@ -2,3 +2,4 @@
 *.d
 test_cryptomath
 test_cryptomath2
+crypto_decimal_extension.dylib*

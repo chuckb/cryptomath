@@ -76,7 +76,6 @@ typedef struct {
     const char* name;          // Human-readable name
     const char* symbol;        // Symbol (e.g., "BTC", "SAT")
     crypto_type_t crypto_type; // Type of cryptocurrency
-    uint64_t denominator;      // Denominator relative to base unit
     uint8_t decimals;          // Number of decimal places
 } crypto_def_t;
 
@@ -259,6 +258,7 @@ int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b);
 int crypto_gt_zero(const crypto_val_t* a);
 int crypto_lt_zero(const crypto_val_t* a);
 int crypto_eq_zero(const crypto_val_t* a);
+crypto_denom_t crypto_get_denom_for_symbol(const char* symbol);
 
 // Implementation section
 #ifdef CRYPTOMATH2_IMPLEMENTATION
@@ -476,6 +476,17 @@ int crypto_lt_zero(const crypto_val_t* a) {
 int crypto_eq_zero(const crypto_val_t* a) {
     assert(a != NULL);
     return mpz_cmp_ui(a->value, 0) == 0;
+}
+
+// Get the denom for a given symbol.
+// Returns DENOM_COUNT if the symbol is not found.
+crypto_denom_t crypto_get_denom_for_symbol(const char* symbol) {
+    for (int i = 0; i < DENOM_COUNT; i++) {
+        if (strcmp(symbol, crypto_denoms[i].symbol) == 0) {
+            return i;
+        }
+    }
+    return DENOM_COUNT;
 }
 
 #endif // CRYPTOMATH2_IMPLEMENTATION
