@@ -581,6 +581,43 @@ void test_sqlite_extension() {
         sqlite3_finalize(stmt);
     }
 
+    // Test 5: Test crypto_sum with values from testsum.sql
+    sql = "CREATE TABLE t(val TEXT);"
+          "INSERT INTO t VALUES('1.234567890000000001'),('0.765432109999999999');"
+          "SELECT crypto_sum('ETH', 'ETH', 'GWEI', val) FROM t;";
+    const char *pzTail = sql;
+
+    total_tests++;
+    while ((rc = sqlite3_prepare_v2(db, pzTail, -1, &stmt, &pzTail)) == SQLITE_OK
+        && stmt)
+    {
+        // Is this a read‑only (SELECT) statement?
+        if (sqlite3_stmt_readonly(stmt)) 
+        {
+            rc = sqlite3_step(stmt);
+            if (rc == SQLITE_ROW) {
+                const char* result = (const char*)sqlite3_column_text(stmt, 0);
+                if (strcmp(result, "2000000000") != 0) {
+                    printf("FAIL: Expected 2000000000, got %s\n", result);
+                    failed_tests++;
+                } else {
+                    printf("PASS: crypto_sum test with high precision values\n");
+                    passed_tests++;
+                }
+                break;
+            }            
+        }
+        rc = sqlite3_step(stmt);
+    }
+    if (rc == SQLITE_ERROR) {
+        printf("Error preparing crypto_sum: %s\n", sqlite3_errmsg(db));
+        failed_tests++;
+        sqlite3_close(db);
+        return;
+    }
+
+    sqlite3_finalize(stmt);
+
     sqlite3_close(db);
 }
 

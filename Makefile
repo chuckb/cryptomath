@@ -23,14 +23,15 @@ all: $(TARGET) $(SQLITE_EXT)
 debug: CFLAGS = $(DEBUG_CFLAGS)
 debug: $(TARGET)
 
-# Build the test executable
-$(TARGET): $(OBJS)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Build the SQLite extension
 $(SQLITE_EXT): crypto_decimal_extension.c cryptomath2.h crypto_get_types.o crypto_get_denoms.o
 #	$(CC) -fPIC -shared $(CFLAGS) -o $@ $< $(LDFLAGS) -lsqlite3 -lm
 	$(CC) -fPIC -dynamiclib $(CFLAGS) -o $@ crypto_decimal_extension.c crypto_get_types.o crypto_get_denoms.o $(LDFLAGS)
+
+# Build the test executable
+$(TARGET): $(OBJS) $(SQLITE_EXT)
+	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Compile source files
 %.o: %.c cryptomath2.h
