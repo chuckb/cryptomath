@@ -8,7 +8,7 @@ LDFLAGS = -I/usr/local/opt/sqlite3/include -L/usr/local/opt/sqlite3/lib -lgmp -l
 #LDFLAGS = -I/usr/include/sqlite3 -L/usr/lib/x86_64-linux-gnu -lgmp
 
 # Define the source files
-SRCS = test_cryptomath2.c
+SRCS = test_cryptomath2.c crypto_get_types.c
 OBJS = $(SRCS:.c=.o)
 DEPS = $(SRCS:.c=.d)
 DEBUG_OBJS = $(SRCS:.c=.debug.o)
@@ -28,9 +28,9 @@ $(TARGET): $(OBJS)
 	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
 
 # Build the SQLite extension
-$(SQLITE_EXT): crypto_decimal_extension.c cryptomath2.h
+$(SQLITE_EXT): crypto_decimal_extension.c cryptomath2.h crypto_get_types.o
 #	$(CC) -fPIC -shared $(CFLAGS) -o $@ $< $(LDFLAGS) -lsqlite3 -lm
-	$(CC) -fPIC -dynamiclib $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) -fPIC -dynamiclib $(CFLAGS) -o $@ crypto_decimal_extension.c crypto_get_types.o $(LDFLAGS)
 
 # Compile source files
 %.o: %.c cryptomath2.h
