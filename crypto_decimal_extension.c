@@ -1,4 +1,11 @@
 /*
+ * Copyright (c) 2025 Charles Benedict, Jr.
+ * See LICENSE.md for licensing information.
+ * This copyright notice must be retained in its entirety.
+ * The LICENSE.md file must be retained and must be included with any distribution of this file.
+ */
+
+/*
   Compile on Linux (example):
     gcc -fPIC -shared -o crypto_decimal_extension.so crypto_decimal_extension.c \
         -lgmp -lsqlite3
