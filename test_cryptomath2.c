@@ -177,6 +177,70 @@ void verify_zero_comparison(const crypto_val_t* a, int comparison, int expected_
     }
 }
 
+// Helper function to execute a SQL query and verify the result
+static void verify_sql_result(sqlite3 *db, const char* sql, const char* expected_result, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc == SQLITE_ROW) {
+        const char* result = (const char*)sqlite3_column_text(stmt, 0);
+        if (strcmp(result, expected_result) != 0) {
+            printf("FAIL: Expected %s, got %s\n", expected_result, result);
+            failed_tests++;
+        } else {
+            printf("PASS: %s\n", test_name);
+            passed_tests++;
+        }
+    } else {
+        printf("FAIL: %s should have returned a row. Error: %s\n", test_name, sqlite3_errmsg(db));
+        failed_tests++;
+    }
+    sqlite3_finalize(stmt);
+}
+
+// Helper function to verify SQL error handling
+static void verify_sql_parse_error(sqlite3 *db, const char* sql, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("PASS: %s\n", test_name);
+        passed_tests++;
+    } else {
+        printf("FAIL: Should have rejected invalid input\n");
+        failed_tests++;
+        sqlite3_finalize(stmt);
+    }
+}
+
+// Helper function to verify SQL error handling
+static void verify_sql_runtime_error(sqlite3 *db, const char* sql, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("FAIL: should have parsed input %s\n", test_name);
+        failed_tests++;
+    } else {
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_ERROR) {
+            printf("FAIL: should have raised runtime error %s\n", test_name);
+            failed_tests++;
+        } else {
+            printf("PASS: %s\n", test_name);
+            passed_tests++;
+        }
+    }
+    sqlite3_finalize(stmt);
+}
+
 void test_arithmetic_operations() {
     printf("\n=== Testing Arithmetic Operations ===\n");
     
@@ -477,46 +541,6 @@ void test_decimal_validation() {
     TEST_VALID_DECIMAL("-0.01");
 }
 
-// Helper function to execute a SQL query and verify the result
-static void verify_sql_result(sqlite3 *db, const char* sql, const char* expected_result, const char* test_name) {
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    if (rc != SQLITE_OK) {
-        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
-
-    rc = sqlite3_step(stmt);
-    total_tests++;
-    if (rc == SQLITE_ROW) {
-        const char* result = (const char*)sqlite3_column_text(stmt, 0);
-        if (strcmp(result, expected_result) != 0) {
-            printf("FAIL: Expected %s, got %s\n", expected_result, result);
-            failed_tests++;
-        } else {
-            printf("PASS: %s\n", test_name);
-            passed_tests++;
-        }
-    }
-    sqlite3_finalize(stmt);
-}
-
-// Helper function to verify SQL error handling
-static void verify_sql_error(sqlite3 *db, const char* sql, const char* test_name) {
-    sqlite3_stmt *stmt;
-    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    total_tests++;
-    if (rc != SQLITE_OK) {
-        printf("PASS: %s\n", test_name);
-        passed_tests++;
-    } else {
-        printf("FAIL: Should have rejected invalid input\n");
-        failed_tests++;
-        sqlite3_finalize(stmt);
-    }
-}
-
 void test_sqlite_extension() {
     printf("\n=== Testing SQLite Extension ===\n");
     
@@ -551,11 +575,11 @@ void test_sqlite_extension() {
         "1",
         "Addition with negative numbers");
 
-    verify_sql_error(db,
+    verify_sql_runtime_error(db,
         "SELECT crypto_add('ETH', 'GWEI', 'invalid', '1.0')",
         "Invalid input handling");
 
-    verify_sql_error(db,
+    verify_sql_parse_error(db,
         "SELECT crypto_add('ETH', 'GWEI', '1.0')",
         "Wrong number of arguments handling");
 
@@ -566,6 +590,7 @@ void test_sqlite_extension() {
     const char *pzTail = sql;
 
     total_tests++;
+    sqlite3_stmt *stmt = NULL;
     while ((rc = sqlite3_prepare_v2(db, pzTail, -1, &stmt, &pzTail)) == SQLITE_OK && stmt) {
         if (sqlite3_stmt_readonly(stmt)) {
             rc = sqlite3_step(stmt);
@@ -608,9 +633,9 @@ void test_sqlite_extension() {
         "Subtraction with decimal values");
 
     verify_sql_result(db,
-        "SELECT crypto_sub('BTC', 'BTC', '1', '0.5')",
-        "0.50000000",
-        "Subtraction with different cryptocurrencies");
+        "SELECT crypto_sub('BTC', 'mBTC', '1', '0.5')",
+        "0.50000",
+        "Subtraction and scale conversion with fractional result");
 
     sqlite3_close(db);
 }
