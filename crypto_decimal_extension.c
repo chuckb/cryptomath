@@ -12,6 +12,7 @@
 #include <sqlite3ext.h>
 SQLITE_EXTENSION_INIT1
 #include "cypto_get_types.h"
+#include "cypto_get_denoms.h"
 #include <gmp.h>
 #include <string.h>
 #include <stdlib.h>
@@ -340,6 +341,24 @@ int sqlite3_cryptodecimalextension_init(
 
     if (rc != SQLITE_OK) {
         *pzErrMsg = sqlite3_mprintf("Error registering crypto_types virtual table");
+        return SQLITE_ERROR;
+    }
+
+    // Register "crypto_denoms" virtual table.
+    rc = sqlite3_create_module(db, "crypto_denoms", &cryptoDenomsModule, 0);
+    if (rc == SQLITE_OK) {
+        /* Eponymous virtual table: "crypto_types" is both the module & table name.
+           This CREATE VIRTUAL TABLE statement is run in the temp schema so that
+           the user can do "SELECT * FROM crypto_denoms()" with no extra steps.
+         */
+        rc = sqlite3_exec(db,
+            "CREATE VIRTUAL TABLE temp.crypto_denoms USING crypto_denoms",
+            NULL, NULL, NULL
+        );
+    }
+
+    if (rc != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_denoms virtual table");
         return SQLITE_ERROR;
     }
 
