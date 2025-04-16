@@ -3,6 +3,7 @@
 #include <string.h>
 #include <setjmp.h>
 #include <signal.h>
+#include <sqlite3.h>
 
 #define CRYPTOMATH2_IMPLEMENTATION
 #include "cryptomath2.h"
@@ -476,6 +477,113 @@ void test_decimal_validation() {
     TEST_VALID_DECIMAL("-0.01");
 }
 
+void test_sqlite_extension() {
+    printf("\n=== Testing SQLite Extension ===\n");
+    
+    // Initialize SQLite
+    sqlite3 *db;
+    char *err_msg = 0;
+    int rc = sqlite3_open(":memory:", &db);
+    if (rc != SQLITE_OK) {
+        printf("Cannot open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    // Load the extension
+    // TODO: Make this cross-platform
+    sqlite3_enable_load_extension(db, 1);
+    rc = sqlite3_load_extension(db, "./crypto_decimal_extension.dylib", 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        printf("Cannot load extension: %s\n", err_msg);
+        sqlite3_free(err_msg);
+        sqlite3_close(db);
+        return;
+    }
+
+    // Test 1: Basic addition in same denomination
+    const char* sql = "SELECT crypto_add('ETH', 'GWEI', '1.234567891', '0.765432109');";
+    sqlite3_stmt *stmt;
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc == SQLITE_ROW) {
+        const char* result = (const char*)sqlite3_column_text(stmt, 0);
+        if (strcmp(result, "2") != 0) {
+            printf("FAIL: Expected 2, got %s\n", result);
+            failed_tests++;
+        } else {
+            printf("PASS: Basic addition test\n");
+            passed_tests++;
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    // Test 2: Addition with negative numbers
+    sql = "SELECT crypto_add('ETH', 'GWEI', '-1.234567891', '2.234567891');";
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc == SQLITE_ROW) {
+        const char* result = (const char*)sqlite3_column_text(stmt, 0);
+        if (strcmp(result, "1") != 0) {
+            printf("FAIL: Expected 1, got %s\n", result);
+            failed_tests++;
+        } else {
+            printf("PASS: Addition with negative numbers\n");
+            passed_tests++;
+        }
+    }
+    sqlite3_finalize(stmt);
+
+    // Test 3: Invalid input handling
+    sql = "SELECT crypto_add('ETH', 'GWEI', 'invalid', '1.0');";
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("PASS: Invalid input handling\n");
+        passed_tests++;
+    } else {
+        printf("FAIL: Should have rejected invalid input\n");
+        failed_tests++;
+        sqlite3_finalize(stmt);
+    }
+
+    // Test 4: Wrong number of arguments
+    sql = "SELECT crypto_add('ETH', 'GWEI', '1.0');";
+    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("PASS: Wrong number of arguments handling\n");
+        passed_tests++;
+    } else {
+        printf("FAIL: Should have rejected wrong number of arguments\n");
+        failed_tests++;
+        sqlite3_finalize(stmt);
+    }
+
+    sqlite3_close(db);
+}
+
 int main() {
     printf("Starting Cryptomath Test Suite\n");
 
@@ -486,6 +594,7 @@ int main() {
     test_zero_comparison();
     test_multiplication_division();
     test_decimal_validation();
+    test_sqlite_extension();
     printf("\nTest Suite Summary:\n");
     printf("Total Tests: %d\n", total_tests);
     printf("Passed: %d\n", passed_tests);

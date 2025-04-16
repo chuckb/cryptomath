@@ -1,7 +1,7 @@
 #ifndef CRYPTO_GET_DENOMS_H
 #define CRYPTO_GET_DENOMS_H
 
-#include <sqlite3ext.h>
+#include <sqlite3.h>
 
 // The module definition for our virtual table.
 extern sqlite3_module cryptoDenomsModule;

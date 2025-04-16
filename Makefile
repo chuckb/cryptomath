@@ -1,9 +1,9 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -g -O2
-DEBUG_CFLAGS = -Wall -Wextra -ggdb -O0 -MMD -MP
+CFLAGS = -Wall -Wextra -g -O2 -I/usr/local/opt/sqlite3/include
+DEBUG_CFLAGS = -Wall -Wextra -ggdb -O0 -MMD -MP -I/usr/local/opt/sqlite3/include
 # Works on macOS - Homebrew cask
 # Note that native sqlite3 on macOS does not have the .load function enabled
-LDFLAGS = -I/usr/local/opt/sqlite3/include -L/usr/local/opt/sqlite3/lib -lgmp -lsqlite3
+LDFLAGS = -L/usr/local/opt/sqlite3/lib -lgmp -lsqlite3
 # Works on Linux
 #LDFLAGS = -I/usr/include/sqlite3 -L/usr/lib/x86_64-linux-gnu -lgmp
 
