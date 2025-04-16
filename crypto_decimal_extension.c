@@ -25,21 +25,59 @@ SQLITE_EXTENSION_INIT1
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <stdarg.h>
 #define CRYPTOMATH2_IMPLEMENTATION
 #include "cryptomath2.h"
 
+typedef enum {
+    ARITHMETIC_ADD,
+    ARITHMETIC_SUB,
+    ARITHMETIC_MUL,
+    ARITHMETIC_DIV
+} crypto_arithmetic_op_t;
+
+static const char *crypto_arithmetic_op_str[] = {
+    "crypto_add",
+    "crypto_sub",
+    "crypto_mul",
+    "crypto_div"
+};
+
+/*
+ * Report a formatted error back to the SQL caller.
+ * Internally formats via sqlite3_vsnprintf, then calls sqlite3_result_error().
+ */
+static void result_error_fmt(
+  sqlite3_context *ctx,    /* The SQLite function context */
+  const char      *fmt,    /* printf-style format string */
+  ...
+){
+  char buf[256];           /* adjust size as needed */
+  va_list ap;
+  va_start(ap, fmt);
+  /* SQLite’s own safe snprintf: will NUL-terminate */
+  sqlite3_vsnprintf(sizeof(buf), buf, fmt, ap);
+  va_end(ap);
+
+  /* Pass -1 so SQLite copies the entire NUL‑terminated buffer */
+  sqlite3_result_error(ctx, buf, -1);
+}
+
 //-----------------------------
-// crypto_add_sqlite
+// crypto_arithmetic_sqlite
 //
-// A SQLite function that adds two crypto-decimal strings exactly.
-static void crypto_add_sqlite(
+// A SQLite function that performs an arithmetic operation on two crypto-decimal strings.
+static void crypto_arithmetic_sqlite(
     sqlite3_context *context,
     int argc,
     sqlite3_value **argv
 ){
+    /* Pull out the arithmetic operation from the user data */
+    crypto_arithmetic_op_t op = (crypto_arithmetic_op_t)(intptr_t)sqlite3_user_data(context);    
+
     // Expect 4 args
     if (argc != 4) {
-        sqlite3_result_error(context, "crypto_add requires four arguments (crypto, denomination, operand1, operand2)", -1);
+        result_error_fmt(context, "%s: requires four arguments (crypto, denomination, operand1, operand2)", crypto_arithmetic_op_str[op]);
         return;
     }
 
@@ -49,59 +87,74 @@ static void crypto_add_sqlite(
     const unsigned char *op_1_str = sqlite3_value_text(argv[2]);
     const unsigned char *op_2_str = sqlite3_value_text(argv[3]);
     if (!crypto_type_str || !denom_str || !op_1_str || !op_2_str) {
-        sqlite3_result_null(context);
+        result_error_fmt(context, "%s: Invalid arguments", crypto_arithmetic_op_str[op]);
         return;
     }
 
     // Get crypto_type for the first arg
     crypto_type_t crypto_type = crypto_get_type_for_symbol((const char*)crypto_type_str);
     if (crypto_type == CRYPTO_COUNT) {
-        sqlite3_result_error(context, "crypto_add: Invalid crypto type", -1);
+        result_error_fmt(context, "%s: Invalid crypto type", crypto_arithmetic_op_str[op]);
         return;
     }
 
     // Get the denom for the first arg
     crypto_denom_t denom = crypto_get_denom_for_symbol(crypto_type, (const char*)denom_str);
     if (denom == DENOM_COUNT) {
-        sqlite3_result_error(context, "crypto_add: Invalid denomination", -1);
+        result_error_fmt(context, "%s: Invalid denomination", crypto_arithmetic_op_str[op]);
         return;
     }
 
     // Parse both operands into crypto_val_t
-    crypto_val_t a, b;
-    crypto_init(&a, crypto_type);
-    crypto_init(&b, crypto_type);
+    crypto_val_t op_1, op_2;
+    crypto_init(&op_1, crypto_type);
+    crypto_init(&op_2, crypto_type);
 
     // Validate the first operand
     if (!crypto_is_valid_decimal((const char*)op_1_str)) {
-        crypto_clear(&a); 
-        crypto_clear(&b);
-        sqlite3_result_error(context, "crypto_add: Invalid decimal format for first operand", -1);
+        crypto_clear(&op_1); 
+        crypto_clear(&op_2);
+        result_error_fmt(context, "%s: Invalid decimal format for first operand", crypto_arithmetic_op_str[op]);
         return;
     }
     // Parse the first operand into crypto_val_t
-    crypto_set_from_decimal(&a, denom, (const char*)op_1_str);
+    crypto_set_from_decimal(&op_1, denom, (const char*)op_1_str);
 
     // Validate the second operand
     if (!crypto_is_valid_decimal((const char*)op_2_str)) {
-        crypto_clear(&a); 
-        crypto_clear(&b);
-        sqlite3_result_error(context, "crypto_add: Invalid decimal format for second operand", -1);
+        crypto_clear(&op_1); 
+        crypto_clear(&op_2);
+        result_error_fmt(context, "%s: Invalid decimal format for second operand", crypto_arithmetic_op_str[op]);
         return;
     }
     // Parse the second operand into crypto_val_t
-    crypto_set_from_decimal(&b, denom, (const char*)op_2_str);
+    crypto_set_from_decimal(&op_2, denom, (const char*)op_2_str);
+    int64_t op_2_int = atoi((const char*)op_2_str);
+    uint64_t op_2_uint = atoi((const char*)op_2_str);
 
-    // Add
-    crypto_add(&a, &b, &a); // store result in a
-    crypto_clear(&b);
+    // Perform the arithmetic operation
+    switch (op) {
+        case ARITHMETIC_ADD:
+            crypto_add(&op_1, &op_1, &op_2);
+            break;
+        case ARITHMETIC_SUB:
+            crypto_sub(&op_1, &op_1, &op_2);
+            break;
+        case ARITHMETIC_MUL:
+            crypto_mul_i64(&op_1, &op_1, op_2_int);
+            break;
+        case ARITHMETIC_DIV:
+            crypto_divt_ui64(&op_1, &op_1, op_2_uint);
+            break;
+    }
+    crypto_clear(&op_2);
 
     // Convert result to decimal string
-    char *resultStr = crypto_to_decimal_str(&a, denom);
-    crypto_clear(&a);
+    char *resultStr = crypto_to_decimal_str(&op_1, denom);
+    crypto_clear(&op_1);
 
     if (!resultStr) {
-        sqlite3_result_error(context, "crypto_add: Could not convert result to string", -1);
+        result_error_fmt(context, "%s: Could not convert result to string", crypto_arithmetic_op_str[op]);
         return;
     }
 
@@ -302,9 +355,31 @@ int sqlite3_cryptodecimalextension_init(
 ){
     SQLITE_EXTENSION_INIT2(pApi);
     // Create or register the function crypto_add
-    if (sqlite3_create_function(db, "crypto_add", 4, SQLITE_UTF8, NULL,
-                                crypto_add_sqlite, NULL, NULL) != SQLITE_OK) {
+    void *pOp = (void*)(intptr_t)ARITHMETIC_ADD;
+    if (sqlite3_create_function(db, "crypto_add", 4, SQLITE_UTF8, pOp,
+                                crypto_arithmetic_sqlite, NULL, NULL) != SQLITE_OK) {
         *pzErrMsg = sqlite3_mprintf("Error registering crypto_add function");
+        return SQLITE_ERROR;
+    }
+    // Create or register the function crypto_sub
+    pOp = (void*)(intptr_t)ARITHMETIC_SUB;
+    if (sqlite3_create_function(db, "crypto_sub", 4, SQLITE_UTF8, pOp,
+                                crypto_arithmetic_sqlite, NULL, NULL) != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_sub function");
+        return SQLITE_ERROR;
+    }
+    // Create or register the function crypto_mul
+    pOp = (void*)(intptr_t)ARITHMETIC_MUL;
+    if (sqlite3_create_function(db, "crypto_mul", 4, SQLITE_UTF8, pOp,
+                                crypto_arithmetic_sqlite, NULL, NULL) != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_mul function");
+        return SQLITE_ERROR;
+    }
+    // Create or register the function crypto_div
+    pOp = (void*)(intptr_t)ARITHMETIC_DIV;
+    if (sqlite3_create_function(db, "crypto_div", 4, SQLITE_UTF8, pOp,
+                                crypto_arithmetic_sqlite, NULL, NULL) != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_div function");
         return SQLITE_ERROR;
     }
     // Create or register the function crypto_scale

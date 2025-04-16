@@ -477,6 +477,46 @@ void test_decimal_validation() {
     TEST_VALID_DECIMAL("-0.01");
 }
 
+// Helper function to execute a SQL query and verify the result
+static void verify_sql_result(sqlite3 *db, const char* sql, const char* expected_result, const char* test_name) {
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc == SQLITE_ROW) {
+        const char* result = (const char*)sqlite3_column_text(stmt, 0);
+        if (strcmp(result, expected_result) != 0) {
+            printf("FAIL: Expected %s, got %s\n", expected_result, result);
+            failed_tests++;
+        } else {
+            printf("PASS: %s\n", test_name);
+            passed_tests++;
+        }
+    }
+    sqlite3_finalize(stmt);
+}
+
+// Helper function to verify SQL error handling
+static void verify_sql_error(sqlite3 *db, const char* sql, const char* test_name) {
+    sqlite3_stmt *stmt;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("PASS: %s\n", test_name);
+        passed_tests++;
+    } else {
+        printf("FAIL: Should have rejected invalid input\n");
+        failed_tests++;
+        sqlite3_finalize(stmt);
+    }
+}
+
 void test_sqlite_extension() {
     printf("\n=== Testing SQLite Extension ===\n");
     
@@ -491,7 +531,6 @@ void test_sqlite_extension() {
     }
 
     // Load the extension
-    // TODO: Make this cross-platform
     sqlite3_enable_load_extension(db, 1);
     rc = sqlite3_load_extension(db, "./crypto_decimal_extension.dylib", 0, &err_msg);
     if (rc != SQLITE_OK) {
@@ -501,99 +540,34 @@ void test_sqlite_extension() {
         return;
     }
 
-    // Test 1: Basic addition in same denomination
-    const char* sql = "SELECT crypto_add('ETH', 'GWEI', '1.234567891', '0.765432109');";
-    sqlite3_stmt *stmt;
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    if (rc != SQLITE_OK) {
-        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
+    // Test cases for crypto_add
+    verify_sql_result(db, 
+        "SELECT crypto_add('ETH', 'GWEI', '1.234567891', '0.765432109')",
+        "2",
+        "Basic addition test");
 
-    rc = sqlite3_step(stmt);
-    total_tests++;
-    if (rc == SQLITE_ROW) {
-        const char* result = (const char*)sqlite3_column_text(stmt, 0);
-        if (strcmp(result, "2") != 0) {
-            printf("FAIL: Expected 2, got %s\n", result);
-            failed_tests++;
-        } else {
-            printf("PASS: Basic addition test\n");
-            passed_tests++;
-        }
-    }
-    sqlite3_finalize(stmt);
+    verify_sql_result(db,
+        "SELECT crypto_add('ETH', 'GWEI', '-1.234567891', '2.234567891')",
+        "1",
+        "Addition with negative numbers");
 
-    // Test 2: Addition with negative numbers
-    sql = "SELECT crypto_add('ETH', 'GWEI', '-1.234567891', '2.234567891');";
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    if (rc != SQLITE_OK) {
-        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
+    verify_sql_error(db,
+        "SELECT crypto_add('ETH', 'GWEI', 'invalid', '1.0')",
+        "Invalid input handling");
 
-    rc = sqlite3_step(stmt);
-    total_tests++;
-    if (rc == SQLITE_ROW) {
-        const char* result = (const char*)sqlite3_column_text(stmt, 0);
-        if (strcmp(result, "1") != 0) {
-            printf("FAIL: Expected 1, got %s\n", result);
-            failed_tests++;
-        } else {
-            printf("PASS: Addition with negative numbers\n");
-            passed_tests++;
-        }
-    }
-    sqlite3_finalize(stmt);
+    verify_sql_error(db,
+        "SELECT crypto_add('ETH', 'GWEI', '1.0')",
+        "Wrong number of arguments handling");
 
-    // Test 3: Invalid input handling
-    sql = "SELECT crypto_add('ETH', 'GWEI', 'invalid', '1.0');";
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    if (rc != SQLITE_OK) {
-        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
-        sqlite3_close(db);
-        return;
-    }
-
-    rc = sqlite3_step(stmt);
-    total_tests++;
-    if (rc != SQLITE_OK) {
-        printf("PASS: Invalid input handling\n");
-        passed_tests++;
-    } else {
-        printf("FAIL: Should have rejected invalid input\n");
-        failed_tests++;
-        sqlite3_finalize(stmt);
-    }
-
-    // Test 4: Wrong number of arguments
-    sql = "SELECT crypto_add('ETH', 'GWEI', '1.0');";
-    rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
-    total_tests++;
-    if (rc != SQLITE_OK) {
-        printf("PASS: Wrong number of arguments handling\n");
-        passed_tests++;
-    } else {
-        printf("FAIL: Should have rejected wrong number of arguments\n");
-        failed_tests++;
-        sqlite3_finalize(stmt);
-    }
-
-    // Test 5: Test crypto_sum with values from testsum.sql
-    sql = "CREATE TABLE t(val TEXT);"
-          "INSERT INTO t VALUES('1.234567890000000001'),('0.765432109999999999');"
-          "SELECT crypto_sum('ETH', 'ETH', 'GWEI', val) FROM t;";
+    // Test case for crypto_sum
+    const char* sql = "CREATE TABLE t(val TEXT);"
+                     "INSERT INTO t VALUES('1.234567890000000001'),('0.765432109999999999');"
+                     "SELECT crypto_sum('ETH', 'ETH', 'GWEI', val) FROM t;";
     const char *pzTail = sql;
 
     total_tests++;
-    while ((rc = sqlite3_prepare_v2(db, pzTail, -1, &stmt, &pzTail)) == SQLITE_OK
-        && stmt)
-    {
-        // Is this a read‑only (SELECT) statement?
-        if (sqlite3_stmt_readonly(stmt)) 
-        {
+    while ((rc = sqlite3_prepare_v2(db, pzTail, -1, &stmt, &pzTail)) == SQLITE_OK && stmt) {
+        if (sqlite3_stmt_readonly(stmt)) {
             rc = sqlite3_step(stmt);
             if (rc == SQLITE_ROW) {
                 const char* result = (const char*)sqlite3_column_text(stmt, 0);
@@ -605,7 +579,7 @@ void test_sqlite_extension() {
                     passed_tests++;
                 }
                 break;
-            }            
+            }
         }
         rc = sqlite3_step(stmt);
     }
@@ -615,8 +589,28 @@ void test_sqlite_extension() {
         sqlite3_close(db);
         return;
     }
-
     sqlite3_finalize(stmt);
+
+    // Test cases for crypto_sub
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '2', '1')",
+        "1",
+        "Basic subtraction test");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '1', '2')",
+        "-1",
+        "Subtraction with negative result");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '1.5', '0.5')",
+        "1",
+        "Subtraction with decimal values");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('BTC', 'BTC', '1', '0.5')",
+        "0.50000000",
+        "Subtraction with different cryptocurrencies");
 
     sqlite3_close(db);
 }
