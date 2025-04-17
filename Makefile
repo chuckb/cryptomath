@@ -39,7 +39,7 @@ $(TARGET): $(OBJS) $(SQLITE_EXT)
 
 # Clean up
 clean:
-	rm -rf $(OBJS) $(TARGET) $(DEPS) $(DEBUG_OBJS) $(SQLITE_EXT) $(SQLITE_EXT).dSYM
+	rm -rf $(OBJS) $(TARGET) $(DEPS) $(DEBUG_OBJS) $(SQLITE_EXT) $(SQLITE_EXT).dSYM crypto_decimal_extension.d
 
 # Include auto-generated dependencies, but do not error if they don't exist yet:
 -include $(DEPS)

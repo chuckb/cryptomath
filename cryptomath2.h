@@ -5,15 +5,29 @@
  * The LICENSE.md file must be retained and must be included with any distribution of this file.
  */
 
+// Usage:
+//
+// #define CRYPTO_IMPLEMENTATION
+// #include "cryptomath2.h"
+//
+// crypto_val_t val1;
+// crypto_init(&val1, CRYPTO_BITCOIN);
+// crypto_set_from_decimal(&val1, BTC_DENOM_BITCOIN, "1.23456788");
+//
+// crypto_val_t val2;
+// crypto_init(&val2, CRYPTO_BITCOIN);
+// crypto_set_from_decimal(&val2, BTC_DENOM_BITCOIN, "2.46913576");
+//
+// crypto_val_t result;
+// crypto_init(&result, CRYPTO_BITCOIN);
+// crypto_add(&result, &val1, &val2);
+// printf("result = %s\n", crypto_to_decimal_str(&result, BTC_DENOM_SATOSHI));
+// crypto_clear(&val1);
+// crypto_clear(&val2);
+// crypto_clear(&result);
+
 #ifndef CRYPTOMATH2_H
 #define CRYPTOMATH2_H
-
-/*
- * Copyright (c) 2025 Charles Benedict, Jr.
- * See LICENSE.md for licensing information.
- * This copyright notice must be retained in its entirety.
- * The LICENSE.md file must be retained and must be included with any distribution of this file.
- */
 
 #include <gmp.h>
 #include <stdint.h>
@@ -435,14 +449,6 @@ crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbo
 crypto_type_t crypto_get_type_for_symbol(const char* symbol);
 bool crypto_is_valid_decimal(const char* str);
 uint8_t crypto_scale_by_precision(const char* str, mpz_t* result);
-
-/**
- * Checks if a valid decimal string has a non-zero fractional part.
- * A decimal point with all zeros after it is considered to have no fraction.
- * 
- * @param str The decimal string to check (must be a valid decimal string)
- * @return true if the string has a non-zero fractional part, false otherwise
- */
 bool crypto_has_nonzero_fraction(const char* str);
 
 // Implementation section
