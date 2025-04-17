@@ -5,6 +5,27 @@
  * The LICENSE.md file must be retained and must be included with any distribution of this file.
  */
 
+// Usage:
+//
+// #define CRYPTO_IMPLEMENTATION
+// #include "cryptomath2.h"
+//
+// crypto_val_t val1;
+// crypto_init(&val1, CRYPTO_BITCOIN);
+// crypto_set_from_decimal(&val1, BTC_DENOM_BITCOIN, "1.23456788");
+//
+// crypto_val_t val2;
+// crypto_init(&val2, CRYPTO_BITCOIN);
+// crypto_set_from_decimal(&val2, BTC_DENOM_BITCOIN, "2.46913576");
+//
+// crypto_val_t result;
+// crypto_init(&result, CRYPTO_BITCOIN);
+// crypto_add(&result, &val1, &val2);
+// printf("result = %s\n", crypto_to_decimal_str(&result, BTC_DENOM_SATOSHI));
+// crypto_clear(&val1);
+// crypto_clear(&val2);
+// crypto_clear(&result);
+
 #ifndef CRYPTOMATH_H
 #define CRYPTOMATH_H
 
@@ -12,690 +33,803 @@
 #include <stdint.h>
 #include <assert.h>
 #include <string.h>
+#include <stdbool.h>
+#include <ctype.h>
 
+// TODO: Perhaps this metadata could be stored in a database or file?
+// If so, how could we make it type safe?
+// Perhaps codegen from a schema?
+// Load into a hash table?
 // Enumeration of supported cryptocurrencies
 typedef enum {
     CRYPTO_BITCOIN,
     CRYPTO_ETHEREUM,
-    CRYPTO_TETHER,
-    CRYPTO_BNB,
+    CRYPTO_BINANCE_COIN,
     CRYPTO_SOLANA,
     CRYPTO_XRP,
-    CRYPTO_USDC,
     CRYPTO_CARDANO,
     CRYPTO_AVALANCHE,
     CRYPTO_DOGECOIN,
+    CRYPTO_POLKADOT,
+    CRYPTO_POLYGON,
+    CRYPTO_USDC,
+    CRYPTO_USDT,
+    CRYPTO_FLARE,
+    CRYPTO_SONGBIRD,
+    CRYPTO_WFLR,
+    CRYPTO_WSGB,
     // Add more cryptocurrencies here as needed
     CRYPTO_COUNT  // Keep this as the last entry
 } crypto_type_t;
 
-// Enumeration of Bitcoin denominations
 typedef enum {
-    BTC_UNIT_BITCOIN,
-    BTC_UNIT_SATOSHI,
-    BTC_UNIT_MILLIBIT,
-    BTC_UNIT_MICROBIT,
-    BTC_UNIT_COUNT  // Keep this as the last entry
-} btc_unit_t;
+    BTC_DENOM_BITCOIN,
+    BTC_DENOM_SATOSHI,
+    BTC_DENOM_MILLIBIT,
+    BTC_DENOM_MICROBIT,
+    ETH_DENOM_ETHER,
+    ETH_DENOM_GWEI,
+    ETH_DENOM_WEI,
+    BNB_DENOM_BNB,
+    BNB_DENOM_JAGER,
+    SOL_DENOM_SOL,
+    SOL_DENOM_LAMPORT,
+    XRP_DENOM_XRP,
+    XRP_DENOM_DROP,
+    ADA_DENOM_ADA,
+    ADA_DENOM_LOVELACE,
+    AVAX_DENOM_AVAX,
+    AVAX_DENOM_NAVAX,
+    DOGE_DENOM_DOGE,
+    DOGE_DENOM_SATOSHI,
+    DOT_DENOM_DOT,
+    DOT_DENOM_PLANCK,
+    MATIC_DENOM_MATIC,
+    MATIC_DENOM_WEI,
+    USDC_DENOM_USDC,
+    USDC_DENOM_MICROUSDC,
+    USDT_DENOM_USDT,
+    USDT_DENOM_MICROUSDT,
+    FLR_DENOM_FLR,
+    FLR_DENOM_GWEI,
+    FLR_DENOM_WEI,
+    SGB_DENOM_SGB,
+    SGB_DENOM_GWEI,
+    SGB_DENOM_WEI,
+    WFLR_DENOM_WFLR,
+    WFLR_DENOM_GWEI,
+    WFLR_DENOM_WEI,
+    WSGB_DENOM_WSGB,
+    WSGB_DENOM_GWEI,
+    WSGB_DENOM_WEI,
+    DENOM_COUNT  // Keep this as the last entry
+} crypto_denom_t;
 
-// Enumeration of Ethereum denominations
-typedef enum {
-    ETH_UNIT_ETHER,
-    ETH_UNIT_GWEI,
-    ETH_UNIT_WEI,
-    ETH_UNIT_COUNT  // Keep this as the last entry
-} eth_unit_t;
-
-// Structure to define a cryptocurrency unit
 typedef struct {
-    const char* name;      // Human-readable name
-    const char* symbol;    // Symbol (e.g., "BTC", "SAT")
-    uint64_t denominator;  // Denominator relative to base unit
-    uint8_t decimals;      // Number of decimal places
-} crypto_unit_t;
+    crypto_type_t crypto_type;
+    mpz_t value;
+} crypto_val_t;
 
-// Structure to hold a cryptocurrency amount with arbitrary precision
 typedef struct {
-    mpq_t value;           // GMP rational number to store the value
-    crypto_type_t type;    // Type of cryptocurrency
-    uint8_t unit;          // Unit of the amount
-    const crypto_unit_t* unit_info;  // Pointer to unit information
-} crypto_amount_t;
+    crypto_type_t crypto_type;   // Type of cryptocurrency
+    const char* name;            // Human-readable name of cryptocurrency
+    const char* symbol;          // Symbol of cryptocurrency
+} crypto_def_t;
 
-// Bitcoin unit definitions
-static const crypto_unit_t bitcoin_units[] = {
-    [BTC_UNIT_BITCOIN] = {
+typedef struct {
+    const char* name;          // Human-readable name of denomination
+    const char* symbol;        // Denomination symbol (e.g., "BTC", "SAT")
+    crypto_type_t crypto_type; // Type of cryptocurrency
+    uint8_t decimals;          // Number of decimal places
+} crypto_denom_def_t;
+
+// Array of cryptocurrency definitions
+static const crypto_def_t crypto_defs[] = {
+    [CRYPTO_BITCOIN] = {
+        .name = "Bitcoin",
+        .symbol = "BTC"
+    },
+    [CRYPTO_ETHEREUM] = {
+        .name = "Ethereum",
+        .symbol = "ETH"
+    },
+    [CRYPTO_BINANCE_COIN] = {
+        .name = "Binance Coin",
+        .symbol = "BNB"
+    },
+    [CRYPTO_SOLANA] = {
+        .name = "Solana",
+        .symbol = "SOL"
+    },
+    [CRYPTO_XRP] = {
+        .name = "XRP",
+        .symbol = "XRP"
+    },
+    [CRYPTO_CARDANO] = {
+        .name = "Cardano",
+        .symbol = "ADA"
+    },
+    [CRYPTO_AVALANCHE] = {
+        .name = "Avalanche",
+        .symbol = "AVAX"
+    },
+    [CRYPTO_DOGECOIN] = {
+        .name = "Dogecoin",
+        .symbol = "DOGE"
+    },
+    [CRYPTO_POLKADOT] = {
+        .name = "Polkadot",
+        .symbol = "DOT"
+    },
+    [CRYPTO_POLYGON] = {
+        .name = "Polygon",
+        .symbol = "MATIC"
+    },
+    [CRYPTO_USDC] = {
+        .name = "USD Coin",
+        .symbol = "USDC"
+    },
+    [CRYPTO_USDT] = {
+        .name = "Tether",
+        .symbol = "USDT"
+    },
+    [CRYPTO_FLARE] = {
+        .name = "Flare",
+        .symbol = "FLR"
+    },
+    [CRYPTO_SONGBIRD] = {
+        .name = "Songbird",
+        .symbol = "SGB"
+    },
+    [CRYPTO_WFLR] = {
+        .name = "Wrapped Flare",
+        .symbol = "WFLR"
+    },
+    [CRYPTO_WSGB] = {
+        .name = "Wrapped Songbird",
+        .symbol = "WSGB"
+    }
+};
+
+// Array of cryptocurrency denomination definitions
+static const crypto_denom_def_t crypto_denoms[] = {
+    [BTC_DENOM_BITCOIN] = {
         .name = "Bitcoin",
         .symbol = "BTC",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_BITCOIN,
         .decimals = 8
     },
-    [BTC_UNIT_SATOSHI] = {
+    [BTC_DENOM_SATOSHI] = {
         .name = "Satoshi",
         .symbol = "SAT",
-        .denominator = 100000000ULL,
+        .crypto_type = CRYPTO_BITCOIN,
         .decimals = 0
     },
-    [BTC_UNIT_MILLIBIT] = {
+    [BTC_DENOM_MILLIBIT] = {
         .name = "Millibit",
         .symbol = "mBTC",
-        .denominator = 1000ULL,
+        .crypto_type = CRYPTO_BITCOIN,
         .decimals = 5
     },
-    [BTC_UNIT_MICROBIT] = {
+    [BTC_DENOM_MICROBIT] = {
         .name = "Microbit",
         .symbol = "μBTC",
-        .denominator = 1000000ULL,
+        .crypto_type = CRYPTO_BITCOIN,
         .decimals = 2
-    }
-};
-
-// Ethereum unit definitions
-static const crypto_unit_t ethereum_units[] = {
-    [ETH_UNIT_ETHER] = {
+    },
+    [ETH_DENOM_ETHER] = {
         .name = "Ether",
         .symbol = "ETH",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_ETHEREUM,
         .decimals = 18
     },
-    [ETH_UNIT_GWEI] = {
+    [ETH_DENOM_GWEI] = {
         .name = "Gwei",
         .symbol = "GWEI",
-        .denominator = 1000000000ULL,
+        .crypto_type = CRYPTO_ETHEREUM,
         .decimals = 9
     },
-    [ETH_UNIT_WEI] = {
+    [ETH_DENOM_WEI] = {
         .name = "Wei",
         .symbol = "WEI",
-        .denominator = 1000000000000000000ULL,
+        .crypto_type = CRYPTO_ETHEREUM,
         .decimals = 0
-    }
-};
-
-// Tether unit definitions
-static const crypto_unit_t tether_units[] = {
-    [USDT_UNIT_USDT] = {
-        .name = "Tether",
-        .symbol = "USDT",
-        .denominator = 1ULL,
-        .decimals = 6
     },
-    [USDT_UNIT_MICROUSDT] = {
-        .name = "Microtether",
-        .symbol = "μUSDT",
-        .denominator = 1000000ULL,
-        .decimals = 0
-    }
-};
-
-// BNB unit definitions
-static const crypto_unit_t bnb_units[] = {
-    [BNB_UNIT_BNB] = {
-        .name = "BNB",
+    [BNB_DENOM_BNB] = {
+        .name = "Binance Coin",
         .symbol = "BNB",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_BINANCE_COIN,
         .decimals = 18
     },
-    [BNB_UNIT_GWEI] = {
-        .name = "Gwei",
-        .symbol = "GWEI",
-        .denominator = 1000000000ULL,
-        .decimals = 9
-    },
-    [BNB_UNIT_WEI] = {
-        .name = "Wei",
-        .symbol = "WEI",
-        .denominator = 1000000000000000000ULL,
+    [BNB_DENOM_JAGER] = {
+        .name = "Jager",
+        .symbol = "JAGER",
+        .crypto_type = CRYPTO_BINANCE_COIN,
         .decimals = 0
-    }
-};
-
-// Solana unit definitions
-static const crypto_unit_t solana_units[] = {
-    [SOL_UNIT_SOL] = {
+    },
+    [SOL_DENOM_SOL] = {
         .name = "Solana",
         .symbol = "SOL",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_SOLANA,
         .decimals = 9
     },
-    [SOL_UNIT_LAMPORT] = {
+    [SOL_DENOM_LAMPORT] = {
         .name = "Lamport",
         .symbol = "LAMP",
-        .denominator = 1000000000ULL,
+        .crypto_type = CRYPTO_SOLANA,
         .decimals = 0
-    }
-};
-
-// XRP unit definitions
-static const crypto_unit_t xrp_units[] = {
-    [XRP_UNIT_XRP] = {
+    },
+    [XRP_DENOM_XRP] = {
         .name = "XRP",
         .symbol = "XRP",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_XRP,
         .decimals = 6
     },
-    [XRP_UNIT_DROP] = {
+    [XRP_DENOM_DROP] = {
         .name = "Drop",
         .symbol = "DROP",
-        .denominator = 1000000ULL,
+        .crypto_type = CRYPTO_XRP,
         .decimals = 0
-    }
-};
-
-// USDC unit definitions
-static const crypto_unit_t usdc_units[] = {
-    [USDC_UNIT_USDC] = {
-        .name = "USDC",
-        .symbol = "USDC",
-        .denominator = 1ULL,
-        .decimals = 6
     },
-    [USDC_UNIT_MICROUSDC] = {
-        .name = "MicroUSDC",
-        .symbol = "μUSDC",
-        .denominator = 1000000ULL,
-        .decimals = 0
-    }
-};
-
-// Cardano unit definitions
-static const crypto_unit_t cardano_units[] = {
-    [ADA_UNIT_ADA] = {
+    [ADA_DENOM_ADA] = {
         .name = "Cardano",
         .symbol = "ADA",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_CARDANO,
         .decimals = 6
     },
-    [ADA_UNIT_LOVELACE] = {
+    [ADA_DENOM_LOVELACE] = {
         .name = "Lovelace",
         .symbol = "LOVELACE",
-        .denominator = 1000000ULL,
+        .crypto_type = CRYPTO_CARDANO,
         .decimals = 0
-    }
-};
-
-// Avalanche unit definitions
-static const crypto_unit_t avalanche_units[] = {
-    [AVAX_UNIT_AVAX] = {
+    },
+    [AVAX_DENOM_AVAX] = {
         .name = "Avalanche",
         .symbol = "AVAX",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_AVALANCHE,
         .decimals = 18
     },
-    [AVAX_UNIT_GWEI] = {
-        .name = "Gwei",
-        .symbol = "GWEI",
-        .denominator = 1000000000ULL,
-        .decimals = 9
-    },
-    [AVAX_UNIT_WEI] = {
-        .name = "Wei",
-        .symbol = "WEI",
-        .denominator = 1000000000000000000ULL,
+    [AVAX_DENOM_NAVAX] = {
+        .name = "nAVAX",
+        .symbol = "nAVAX",
+        .crypto_type = CRYPTO_AVALANCHE,
         .decimals = 0
-    }
-};
-
-// Dogecoin unit definitions
-static const crypto_unit_t dogecoin_units[] = {
-    [DOGE_UNIT_DOGE] = {
+    },
+    [DOGE_DENOM_DOGE] = {
         .name = "Dogecoin",
         .symbol = "DOGE",
-        .denominator = 1ULL,
+        .crypto_type = CRYPTO_DOGECOIN,
         .decimals = 8
     },
-    [DOGE_UNIT_SATOSHI] = {
+    [DOGE_DENOM_SATOSHI] = {
         .name = "Satoshi",
         .symbol = "SAT",
-        .denominator = 100000000ULL,
+        .crypto_type = CRYPTO_DOGECOIN,
+        .decimals = 0
+    },
+    [DOT_DENOM_DOT] = {
+        .name = "Polkadot",
+        .symbol = "DOT",
+        .crypto_type = CRYPTO_POLKADOT,
+        .decimals = 10
+    },
+    [DOT_DENOM_PLANCK] = {
+        .name = "Planck",
+        .symbol = "PLANCK",
+        .crypto_type = CRYPTO_POLKADOT,
+        .decimals = 0
+    },
+    [MATIC_DENOM_MATIC] = {
+        .name = "Polygon",
+        .symbol = "MATIC",
+        .crypto_type = CRYPTO_POLYGON,
+        .decimals = 18
+    },
+    [MATIC_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_POLYGON,
+        .decimals = 0
+    },
+    [USDC_DENOM_USDC] = {
+        .name = "USD Coin",
+        .symbol = "USDC",
+        .crypto_type = CRYPTO_USDC,
+        .decimals = 6
+    },
+    [USDC_DENOM_MICROUSDC] = {
+        .name = "Micro USD Coin",
+        .symbol = "μUSDC",
+        .crypto_type = CRYPTO_USDC,
+        .decimals = 0
+    },
+    [USDT_DENOM_USDT] = {
+        .name = "Tether",
+        .symbol = "USDT",
+        .crypto_type = CRYPTO_USDT,
+        .decimals = 6
+    },
+    [USDT_DENOM_MICROUSDT] = {
+        .name = "Micro Tether",
+        .symbol = "μUSDT",
+        .crypto_type = CRYPTO_USDT,
+        .decimals = 0
+    },
+    [FLR_DENOM_FLR] = {
+        .name = "Flare",
+        .symbol = "FLR",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 18
+    },
+    [FLR_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 9
+    },
+    [FLR_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_FLARE,
+        .decimals = 0
+    },
+    [SGB_DENOM_SGB] = {
+        .name = "Songbird",
+        .symbol = "SGB",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 18
+    },
+    [SGB_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 9
+    },
+    [SGB_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_SONGBIRD,
+        .decimals = 0
+    },
+    [WFLR_DENOM_WFLR] = {
+        .name = "Wrapped Flare",
+        .symbol = "WFLR",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 18
+    },
+    [WFLR_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 9
+    },
+    [WFLR_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_WFLR,
+        .decimals = 0
+    },
+    [WSGB_DENOM_WSGB] = {
+        .name = "Wrapped Songbird",
+        .symbol = "WSGB",
+        .crypto_type = CRYPTO_WSGB,
+        .decimals = 18
+    },
+    [WSGB_DENOM_GWEI] = {
+        .name = "Gwei",
+        .symbol = "GWEI",
+        .crypto_type = CRYPTO_WSGB,
+        .decimals = 9
+    },
+    [WSGB_DENOM_WEI] = {
+        .name = "Wei",
+        .symbol = "WEI",
+        .crypto_type = CRYPTO_WSGB,
         .decimals = 0
     }
 };
 
-// Function declarations
-int crypto_is_valid_unit(crypto_type_t type, uint8_t unit);
-int crypto_is_valid_amount(const crypto_amount_t* amount);
-void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit);
-void crypto_clear(crypto_amount_t* amount);
-void crypto_init_bitcoin(crypto_amount_t* amount, btc_unit_t unit);
-void crypto_init_ethereum(crypto_amount_t* amount, eth_unit_t unit);
-const crypto_unit_t* crypto_get_unit_info(crypto_type_t type, uint8_t unit);
-void crypto_convert_to_unit(const crypto_amount_t* amount, crypto_amount_t* result, uint8_t target_unit);
-void crypto_print_amount(const crypto_amount_t* amount);
-
-// New function declarations for type-safe value setting
-void crypto_set_value(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, uint64_t whole, uint64_t fraction);
-void crypto_set_value_from_decimal(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, const char* decimal_str);
-
-// Arithmetic operation declarations
-void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
-void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
-void crypto_add_inplace(crypto_amount_t* a, const crypto_amount_t* b);
-void crypto_sub_inplace(crypto_amount_t* a, const crypto_amount_t* b);
-int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b);
-
-// Multiplication and division operations
-void crypto_mul(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
-void crypto_div(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result);
-void crypto_mul_inplace(crypto_amount_t* a, const crypto_amount_t* b);
-void crypto_div_inplace(crypto_amount_t* a, const crypto_amount_t* b);
+int crypto_is_valid_type(crypto_type_t type);
+int crypto_is_valid_denom(crypto_denom_t denom);
+void crypto_init(crypto_val_t* val, crypto_type_t type);
+void crypto_clear(crypto_val_t* val);
+void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char* decimal_str);
+char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom);
+void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
+void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
+void crypto_mul(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_truncate(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_floor(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_ceil(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b);
+int crypto_gt_zero(const crypto_val_t* a);
+int crypto_lt_zero(const crypto_val_t* a);
+int crypto_eq_zero(const crypto_val_t* a);
+crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbol);
+crypto_type_t crypto_get_type_for_symbol(const char* symbol);
+bool crypto_is_valid_decimal(const char* str);
+uint8_t crypto_scale_by_precision(const char* str, mpz_t* result);
+bool crypto_has_nonzero_fraction(const char* str);
 
 // Implementation section
 #ifdef CRYPTOMATH_IMPLEMENTATION
 
-int crypto_is_valid_unit(crypto_type_t type, uint8_t unit) {
-    switch (type) {
-        case CRYPTO_BITCOIN:
-            return (unit < BTC_UNIT_COUNT);
-        case CRYPTO_ETHEREUM:
-            return (unit < ETH_UNIT_COUNT);
-        case CRYPTO_TETHER:
-            return (unit < USDT_UNIT_COUNT);
-        case CRYPTO_BNB:
-            return (unit < BNB_UNIT_COUNT);
-        case CRYPTO_SOLANA:
-            return (unit < SOL_UNIT_COUNT);
-        case CRYPTO_XRP:
-            return (unit < XRP_UNIT_COUNT);
-        case CRYPTO_USDC:
-            return (unit < USDC_UNIT_COUNT);
-        case CRYPTO_CARDANO:
-            return (unit < ADA_UNIT_COUNT);
-        case CRYPTO_AVALANCHE:
-            return (unit < AVAX_UNIT_COUNT);
-        case CRYPTO_DOGECOIN:
-            return (unit < DOGE_UNIT_COUNT);
-        default:
-            return 0;
+// Note: We assume that decimals will not exceed 18 places.
+// No token I can find has more than 18 decimal places.
+// If you need more, you can change the type of denominator to a mpz_t.
+uint64_t power(uint64_t base, uint64_t exp)
+{
+    uint64_t result = 1;
+    while(exp) 
+    {   
+        result = result * base; 
+        exp--; 
     }
+    return result;
 }
 
-int crypto_is_valid_amount(const crypto_amount_t* amount) {
-    if (!amount || !amount->unit_info) {
-        return 0;
-    }
-    return crypto_is_valid_unit(amount->type, amount->unit);
+int crypto_is_valid_type(crypto_type_t type) {
+    return (type >= 0 && type < CRYPTO_COUNT);
 }
 
-void crypto_init(crypto_amount_t* amount, crypto_type_t type, uint8_t unit) {
-    assert(amount != NULL);
-    assert(crypto_is_valid_unit(type, unit));
+int crypto_is_valid_denom(crypto_denom_t denom) {
+    return (denom >= 0 && denom < DENOM_COUNT);
+}
+
+void crypto_init(crypto_val_t* val, crypto_type_t type) {
+    assert(val != NULL);
+    assert(crypto_is_valid_type(type));
+    val->crypto_type = type;
+    mpz_init(val->value);
+}
+
+void crypto_clear(crypto_val_t* val) {
+    assert(val != NULL);
+    mpz_clear(val->value);
+}
+
+// Set the value of a crypto_val_t from a decimal string.
+// Note that val will be stored in the smallest unit of the crypto type.
+// For example, if the decimal string is "1.23456789" and the denom is BTC_DENOM_BITCOIN,
+// val will be set to 123456789.
+void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char* decimal_str) {
+    assert(val != NULL);
+    assert(crypto_is_valid_denom(denom));
+    assert(decimal_str != NULL);
+    assert(val->crypto_type == crypto_denoms[denom].crypto_type);
+
+    // 1. Truncate spaces from decimal_str
+    while (*decimal_str == ' ') {
+        decimal_str++;
+    }
+
+    // 2. Check for optional sign
+    int sign = 1;
+    if (*decimal_str == '-') {
+        sign = -1;
+        decimal_str++;
+    } else if (*decimal_str == '+') {
+        decimal_str++;
+    }
     
-    mpq_init(amount->value);
-    amount->type = type;
-    amount->unit = unit;
-    switch (type) {
-        case CRYPTO_BITCOIN:
-            amount->unit_info = &bitcoin_units[unit];
-            break;
-        case CRYPTO_ETHEREUM:
-            amount->unit_info = &ethereum_units[unit];
-            break;
-        case CRYPTO_TETHER:
-            amount->unit_info = &tether_units[unit];
-            break;
-        case CRYPTO_BNB:
-            amount->unit_info = &bnb_units[unit];
-            break;
-        case CRYPTO_SOLANA:
-            amount->unit_info = &solana_units[unit];
-            break;
-        case CRYPTO_XRP:
-            amount->unit_info = &xrp_units[unit];
-            break;
-        case CRYPTO_USDC:
-            amount->unit_info = &usdc_units[unit];
-            break;
-        case CRYPTO_CARDANO:
-            amount->unit_info = &cardano_units[unit];
-            break;
-        case CRYPTO_AVALANCHE:
-            amount->unit_info = &avalanche_units[unit];
-            break;
-        case CRYPTO_DOGECOIN:
-            amount->unit_info = &dogecoin_units[unit];
-            break;
-        default:
-            assert(0);  // Invalid crypto type
+    // 3. Parse the decimal string
+    const char *dot = strchr(decimal_str, '.');
+    if (dot == NULL) {
+        // No decimal point, just set the value
+        mpz_set_str(val->value, decimal_str, 10);
+        // Scale the whole number by the number of decimal places
+        // TODO: Pre-calculate the power of 10 for the denom
+        mpz_mul_ui(val->value, val->value, power(10, crypto_denoms[denom].decimals));
+    } else {
+        // Parse whole number and fraction separately
+        mpz_t whole_part;
+        mpz_t fraction_part;
+        mpz_init(whole_part);
+        mpz_init(fraction_part);
+        
+        // Parse the whole number part
+        char* whole_str = strdup(decimal_str);
+        whole_str[dot - decimal_str] = '\0';
+        mpz_set_str(whole_part, whole_str, 10);
+        // TODO: Pre-calculate the power of 10 for the denom
+        mpz_mul_ui(whole_part, whole_part, power(10, crypto_denoms[denom].decimals));
+        free(whole_str);
+
+        // Parse the fraction part up to the last expected digit for the denom
+        char* fraction_str = malloc(crypto_denoms[denom].decimals + 1);
+        // Pad fraction_str with zeros
+        memset(fraction_str, '0', crypto_denoms[denom].decimals);
+        // Null-terminate the string
+        fraction_str[crypto_denoms[denom].decimals] = '\0';
+        // Copy the fraction part into the string
+        memcpy(fraction_str, dot + 1, 
+            strlen(dot + 1) < crypto_denoms[denom].decimals ? strlen(dot + 1) : crypto_denoms[denom].decimals);
+        mpz_set_str(fraction_part, fraction_str, 10);
+        free(fraction_str);
+
+        // Add the whole and fraction parts
+        mpz_add(val->value, whole_part, fraction_part);
+        mpz_clear(whole_part);
+        mpz_clear(fraction_part);
     }
+
+    // 4. Apply sign
+    mpz_mul_si(val->value, val->value, sign);
 }
 
-void crypto_clear(crypto_amount_t* amount) {
-    assert(amount != NULL);
-    mpq_clear(amount->value);
-}
+char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom) {
+    assert(val != NULL);
+    assert(crypto_is_valid_denom(denom));
+    assert(val->crypto_type == crypto_denoms[denom].crypto_type);
 
-void crypto_init_bitcoin(crypto_amount_t* amount, btc_unit_t unit) {
-    assert(amount != NULL);
-    assert(crypto_is_valid_unit(CRYPTO_BITCOIN, unit));
-    crypto_init(amount, CRYPTO_BITCOIN, unit);
-}
+    // Determine the sign
+    int sign = mpz_sgn(val->value);
 
-void crypto_init_ethereum(crypto_amount_t* amount, eth_unit_t unit) {
-    assert(amount != NULL);
-    assert(crypto_is_valid_unit(CRYPTO_ETHEREUM, unit));
-    crypto_init(amount, CRYPTO_ETHEREUM, unit);
-}
+    // Determine the whole part scaled to the denom
+    mpz_t whole_part;
+    mpz_init(whole_part);
+    mpz_t fraction_part;
+    mpz_init(fraction_part);
+    mpz_tdiv_qr_ui(whole_part, fraction_part, val->value, power(10, crypto_denoms[denom].decimals));
 
-const crypto_unit_t* crypto_get_unit_info(crypto_type_t type, uint8_t unit) {
-    assert(crypto_is_valid_unit(type, unit));
-    switch (type) {
-        case CRYPTO_BITCOIN:
-            return &bitcoin_units[unit];
-        case CRYPTO_ETHEREUM:
-            return &ethereum_units[unit];
-        case CRYPTO_TETHER:
-            return &tether_units[unit];
-        case CRYPTO_BNB:
-            return &bnb_units[unit];
-        case CRYPTO_SOLANA:
-            return &solana_units[unit];
-        case CRYPTO_XRP:
-            return &xrp_units[unit];
-        case CRYPTO_USDC:
-            return &usdc_units[unit];
-        case CRYPTO_CARDANO:
-            return &cardano_units[unit];
-        case CRYPTO_AVALANCHE:
-            return &avalanche_units[unit];
-        case CRYPTO_DOGECOIN:
-            return &dogecoin_units[unit];
-        default:
-            return NULL;
+    // Convert the whole and fraction parts to strings
+    mpz_abs(whole_part, whole_part);
+    mpz_abs(fraction_part, fraction_part);
+    char* whole_str = mpz_get_str(NULL, 10, whole_part);
+    char* fraction_str = mpz_get_str(NULL, 10, fraction_part);
+
+    // Format the whole and fraction parts
+    char* formatted_str = malloc(strlen(whole_str) + strlen(fraction_str) + (sign == -1 ? 2 : 1));
+    // Add the sign if it's negative; otherwise, just copy the whole_str
+    if (sign == -1) {
+        formatted_str[0] = '-';
+        strcpy(formatted_str + 1, whole_str);
+    } else {
+        strcpy(formatted_str, whole_str);
     }
+    // If the fraction part is not zero, add the decimal point and pad the fraction part with leading zeros if needed
+    if (mpz_cmp_ui(fraction_part, 0) != 0) {
+        strcat(formatted_str, ".");
+        // Pad the fraction part with leading zeros if not enough digits
+        if (strlen(fraction_str) < crypto_denoms[denom].decimals) {
+            formatted_str = realloc(formatted_str, strlen(formatted_str) + crypto_denoms[denom].decimals - strlen(fraction_str) + 1);
+            memset(formatted_str + strlen(formatted_str), '0', crypto_denoms[denom].decimals - strlen(fraction_str));
+            strcat(formatted_str, fraction_str);
+        } else {
+            strcat(formatted_str, fraction_str);
+        }
+    }
+
+    // Free the temporary strings
+    free(whole_str);
+    free(fraction_str);
+    mpz_clear(whole_part);
+    mpz_clear(fraction_part);
+    return formatted_str;
 }
 
-void crypto_convert_to_unit(const crypto_amount_t* amount, crypto_amount_t* result, uint8_t target_unit) {
-    assert(amount != NULL);
+void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(a->crypto_type == b->crypto_type);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_add(r->value, a->value, b->value);
+}
+
+void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(a->crypto_type == b->crypto_type);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_sub(r->value, a->value, b->value);
+}
+
+void crypto_mul(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_mul(r->value, a->value, *b);
+}
+
+void crypto_div_truncate(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_tdiv_q(r->value, a->value, *b);
+}
+
+void crypto_div_floor(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_fdiv_q(r->value, a->value, *b);
+}
+
+void crypto_div_ceil(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_cdiv_q(r->value, a->value, *b);
+}
+
+int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b) {
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(a->crypto_type == b->crypto_type);
+    return mpz_cmp(a->value, b->value);
+}
+
+int crypto_gt_zero(const crypto_val_t* a) {
+    assert(a != NULL);
+    return mpz_cmp_ui(a->value, 0) > 0;
+}
+
+int crypto_lt_zero(const crypto_val_t* a) {
+    assert(a != NULL);
+    return mpz_cmp_ui(a->value, 0) < 0;
+}
+
+int crypto_eq_zero(const crypto_val_t* a) {
+    assert(a != NULL);
+    return mpz_cmp_ui(a->value, 0) == 0;
+}
+
+// Get the denom for a given symbol.
+// Returns DENOM_COUNT if the symbol is not found.
+crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbol) {
+    for (int i = 0; i < DENOM_COUNT; i++) {
+        if (crypto_denoms[i].crypto_type == type && strcmp(symbol, crypto_denoms[i].symbol) == 0) {
+            return i;
+        }
+    }
+    return DENOM_COUNT;
+}
+
+bool crypto_is_valid_decimal(const char* str) {
+    if (!str) return false;
+    
+    // Skip leading whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+        str++;
+    }
+    
+    // Check for empty string after whitespace
+    if (*str == '\0') return false;
+    
+    // Check for optional sign
+    if (*str == '+' || *str == '-') {
+        str++;
+    }
+    
+    // Must have at least one digit or decimal point
+    if (!isdigit(*str) && *str != '.') return false;
+    
+    bool has_decimal = *str == '.' ? true : false;
+    bool has_digit = isdigit(*str) ? true : false;
+    
+    str++;
+    
+    // Process the rest of the string
+    while (*str != '\0') {
+        if (*str == '.') {
+            if (has_decimal) return false; // More than one decimal point
+            has_decimal = true;
+        } else if (isdigit(*str)) {
+            has_digit = true;
+        } else if (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+            // Skip trailing whitespace
+            str++;
+            while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+                str++;
+            }
+            // If we hit non-whitespace after trailing whitespace, invalid
+            if (*str != '\0') return false;
+            break;
+        } else {
+            return false; // Invalid character
+        }
+        str++;
+    }
+    
+    return has_digit; // Must have at least one digit
+}
+
+bool crypto_has_nonzero_fraction(const char* str) {
+    if (!str) return false;
+    
+    // Skip leading whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+        str++;
+    }
+    
+    // Skip optional sign
+    if (*str == '+' || *str == '-') {
+        str++;
+    }
+    
+    // Find the decimal point
+    const char* decimal_point = strchr(str, '.');
+    if (!decimal_point) {
+        return false; // No decimal point means no fraction
+    }
+    
+    // Check if there are any non-zero digits after the decimal point
+    decimal_point++; // Move past the decimal point
+    while (*decimal_point != '\0' && *decimal_point != ' ' && *decimal_point != '\t' && *decimal_point != '\n' && *decimal_point != '\r') {
+        if (*decimal_point != '0') {
+            return true; // Found a non-zero digit in the fraction
+        }
+        decimal_point++;
+    }
+    
+    return false; // All digits after decimal point were zero
+}
+
+// Take an assumed valid decimal string, determine the precision past the decimal point,
+// multiple the whole number by 10^precision, add the fraction to the whole number,
+// and return the precision. The result will be passed in as a pointer to mpz_t.
+uint8_t crypto_scale_by_precision(const char* str, mpz_t* result) {
+    assert(str != NULL);
     assert(result != NULL);
-    assert(crypto_is_valid_amount(amount));
-    assert(crypto_is_valid_unit(amount->type, target_unit));
-    
-    crypto_init(result, amount->type, target_unit);
-    
-    // Calculate conversion factor
-    mpq_t conversion_factor;
-    mpq_init(conversion_factor);
-    
-    // Convert from source unit to base unit
-    mpq_set_ui(conversion_factor, amount->unit_info->denominator, 1);
-    mpq_mul(result->value, amount->value, conversion_factor);
-    
-    // Convert from base unit to target unit
-    const crypto_unit_t* target_unit_info = crypto_get_unit_info(amount->type, target_unit);
-    mpq_set_ui(conversion_factor, 1, target_unit_info->denominator);
-    mpq_mul(result->value, result->value, conversion_factor);
-    
-    mpq_clear(conversion_factor);
-}
 
-void crypto_print_amount(const crypto_amount_t* amount) {
-    assert(amount != NULL);
-    assert(crypto_is_valid_amount(amount));
-
-    // Convert to string with full precision
-    char* str = mpq_get_str(NULL, 10, amount->value);
-    if (!str) {
-        return;
-    }
+    // Get the whole number part
+    mpz_set_str(*result, str, 10);
 
     // Find the decimal point
-    char* decimal_point = strchr(str, '.');
+    const char* decimal_point = strchr(str, '.');
     if (!decimal_point) {
-        // If no decimal point, add it
-        printf("%s.0 %s\n", str, amount->unit_info->symbol);
-    } else {
-        // Print with proper decimal places
-        printf("%.*s %s\n", 
-               (int)(strlen(decimal_point + 1) + 1),  // +1 for the decimal point
-               str,
-               amount->unit_info->symbol);
+        return 0; // No decimal point means no precision
     }
 
-    free(str);
-}
+    // Get the precision
+    uint8_t precision = 0;
+    while (decimal_point[precision + 1] != '\0') {
+        precision++;
+    }
 
-void crypto_set_value(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, uint64_t whole, uint64_t fraction) {
-    assert(amount != NULL);
-    assert(crypto_is_valid_unit(type, unit));
-    
-    // Initialize the amount with the correct type and unit
-    crypto_init(amount, type, unit);
-    
-    // Get the unit info for the target unit
-    const crypto_unit_t* unit_info = crypto_get_unit_info(type, unit);
-    
-    // Set the whole part
-    mpq_set_ui(amount->value, whole, 1);
-    
-    // Add the fraction part if provided
-    if (fraction > 0) {
-        mpq_t fraction_part;
-        mpq_init(fraction_part);
-        
-        // Calculate the denominator for the fraction based on the unit's decimals
-        uint64_t denominator = 1;
-        for (uint8_t i = 0; i < unit_info->decimals; i++) {
-            denominator *= 10;
-        }
-        
-        mpq_set_ui(fraction_part, fraction, denominator);
-        mpq_add(amount->value, amount->value, fraction_part);
-        mpq_clear(fraction_part);
-    }
-    
-    // Convert to base unit
-    mpq_t conversion_factor;
-    mpq_init(conversion_factor);
-    mpq_set_ui(conversion_factor, 1, unit_info->denominator);
-    mpq_mul(amount->value, amount->value, conversion_factor);
-    mpq_clear(conversion_factor);
-}
-
-void crypto_set_value_from_decimal(crypto_amount_t* amount, crypto_type_t type, uint8_t unit, const char* decimal_str) {
-    assert(amount != NULL);
-    assert(decimal_str != NULL);
-    assert(crypto_is_valid_unit(type, unit));
-    
-    // Initialize the amount structure
-    crypto_init(amount, type, unit);
-    
-    // Parse the decimal string
-    const char* p = decimal_str;
-    int is_negative = 0;
-    
-    // Handle sign
-    if (*p == '-') {
-        is_negative = 1;
-        p++;
-    }
-    
-    // Parse whole part
-    mpz_t whole;
-    mpz_init(whole);
-    mpz_set_ui(whole, 0);
-    
-    while (*p >= '0' && *p <= '9') {
-        mpz_mul_ui(whole, whole, 10);
-        mpz_add_ui(whole, whole, *p - '0');
-        p++;
-    }
-    
-    // Parse fractional part
+    // Get the fraction part into a mpz_t
     mpz_t fraction;
     mpz_init(fraction);
-    mpz_set_ui(fraction, 0);
-    mpz_t denominator;
-    mpz_init(denominator);
-    mpz_set_ui(denominator, 1);
-    
-    if (*p == '.') {
-        p++;
-        while (*p >= '0' && *p <= '9') {
-            mpz_mul_ui(fraction, fraction, 10);
-            mpz_add_ui(fraction, fraction, *p - '0');
-            mpz_mul_ui(denominator, denominator, 10);
-            p++;
+    mpz_set_str(fraction, decimal_point + 1, 10);
+
+    // Only scale the whole number if the fraction is not zero
+    if (mpz_cmp_ui(fraction, 0) != 0) {
+        mpz_t scale;
+        mpz_init(scale);
+        mpz_ui_pow_ui(scale, 10, precision);
+        // Scale the whole number by the precision; assume the precision can be large
+        mpz_mul(*result, *result, scale);
+        // Add the fraction to the whole number
+        mpz_add(*result, *result, fraction);
+        // Clear the fraction
+        mpz_clear(fraction);
+        mpz_clear(scale);
+        // Return the precision
+        return precision;
+    } else {
+        // Clear the fraction
+        mpz_clear(fraction);
+        return 0;
+    }
+}
+
+// Get the type for a given symbol.
+// Returns CRYPTO_COUNT if the symbol is not found.
+crypto_type_t crypto_get_type_for_symbol(const char* symbol) {
+    for (int i = 0; i < CRYPTO_COUNT; i++) {
+        if (strcmp(symbol, crypto_defs[i].symbol) == 0) {
+            return i;
         }
     }
-    
-    // Combine whole and fraction
-    mpz_mul(whole, whole, denominator);
-    mpz_add(whole, whole, fraction);
-    
-    // Set the value
-    mpq_set_z(amount->value, whole);
-    mpq_set_den(amount->value, denominator);
-    
-    // Apply sign
-    if (is_negative) {
-        mpq_neg(amount->value, amount->value);
-    }
-    
-    // Clean up
-    mpz_clear(whole);
-    mpz_clear(fraction);
-    mpz_clear(denominator);
-    
-    // Convert to base unit if needed
-    const crypto_unit_t* unit_info = crypto_get_unit_info(type, unit);
-    if (unit_info->denominator != 1) {
-        mpq_t conversion_factor;
-        mpq_init(conversion_factor);
-        mpq_set_ui(conversion_factor, 1, unit_info->denominator);
-        mpq_mul(amount->value, amount->value, conversion_factor);
-        mpq_clear(conversion_factor);
-    }
+    return CRYPTO_COUNT;
 }
 
-void crypto_add(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
-    assert(a != NULL && b != NULL && result != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);  // Can only add same crypto types
-    
-    // Initialize result with the same type and unit as a
-    crypto_init(result, a->type, a->unit);
-    
-    // Add the values
-    mpq_add(result->value, a->value, b->value);
-}
+#endif // CRYPTOMATH2_IMPLEMENTATION
 
-void crypto_sub(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
-    assert(a != NULL && b != NULL && result != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);  // Can only subtract same crypto types
-    
-    // Initialize result with the same type and unit as a
-    crypto_init(result, a->type, a->unit);
-    
-    // Subtract the values
-    mpq_sub(result->value, a->value, b->value);
-}
-
-void crypto_add_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
-    assert(a != NULL && b != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);
-    
-    // Create a temporary result to avoid issues when a == b
-    mpq_t temp;
-    mpq_init(temp);
-    // Add the values
-    mpq_add(temp, a->value, b->value);
-    
-    // Copy the result back to a
-    mpq_set(a->value, temp);
-    
-    // Clean up the temporary
-    mpq_clear(temp);
-}
-    
-void crypto_sub_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
-    assert(a != NULL && b != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);
-    
-    // Create a temporary result to avoid issues when a == b
-    mpq_t temp;
-    mpq_init(temp);
-    // Subtract the values
-    mpq_sub(temp, a->value, b->value);
-    
-    // Copy the result back to a
-    mpq_set(a->value, temp);
-    
-    // Clean up the temporary
-    mpq_clear(temp);
-}
-
-int crypto_cmp(const crypto_amount_t* a, const crypto_amount_t* b) {
-    assert(a != NULL && b != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);  // Can only compare same crypto types
-    
-    return mpq_cmp(a->value, b->value);
-}
-
-void crypto_mul(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
-    assert(a != NULL && b != NULL && result != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);  // Can only multiply same crypto types
-    
-    // Initialize result with the same type and unit as a
-    crypto_init(result, a->type, a->unit);
-    
-    // Multiply the values
-    mpq_mul(result->value, a->value, b->value);
-}
-
-void crypto_div(const crypto_amount_t* a, const crypto_amount_t* b, crypto_amount_t* result) {
-    assert(a != NULL && b != NULL && result != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);  // Can only divide same crypto types
-    
-    // Initialize result with the same type and unit as a
-    crypto_init(result, a->type, a->unit);
-    
-    // Divide the values
-    mpq_div(result->value, a->value, b->value);
-}
-
-void crypto_mul_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
-    assert(a != NULL && b != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);
-    
-    // Create a temporary result to avoid issues when a == b
-    mpq_t temp;
-    mpq_init(temp);
-    // Multiply the values
-    mpq_mul(temp, a->value, b->value);
-    
-    // Copy the result back to a
-    mpq_set(a->value, temp);
-    
-    // Clean up the temporary
-    mpq_clear(temp);
-}
-
-void crypto_div_inplace(crypto_amount_t* a, const crypto_amount_t* b) {
-    assert(a != NULL && b != NULL);
-    assert(crypto_is_valid_amount(a) && crypto_is_valid_amount(b));
-    assert(a->type == b->type);
-    
-    // Create a temporary result to avoid issues when a == b
-    mpq_t temp;
-    mpq_init(temp);
-    // Divide the values
-    mpq_div(temp, a->value, b->value);
-    
-    // Copy the result back to a
-    mpq_set(a->value, temp);
-    
-    // Clean up the temporary
-    mpq_clear(temp);
-}
-
-#endif // CRYPTOMATH_IMPLEMENTATION
-
-#endif // CRYPTOMATH_H 
+#endif // CRYPTOMATH2_H 

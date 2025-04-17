@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "cypto_get_denoms.h"
-#include "cryptomath2.h"
+#include "cryptomath.h"
 /*
 ** Eponymous virtual table module: "crypto_denoms"
 ** Presents a table with four columns:

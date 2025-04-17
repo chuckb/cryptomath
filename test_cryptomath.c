@@ -1,6 +1,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <setjmp.h>
+#include <signal.h>
+#include <sqlite3.h>
 
 #define CRYPTOMATH_IMPLEMENTATION
 #include "cryptomath.h"
@@ -10,516 +13,764 @@ static int total_tests = 0;
 static int passed_tests = 0;
 static int failed_tests = 0;
 
-// Helper function to verify a result
-void verify_result(const char* operation, const crypto_amount_t* result, 
-                  crypto_type_t type, uint8_t expected_unit, uint64_t expected_whole, 
-                  uint64_t expected_fraction, int is_negative) {
+// Global jump buffer for longjmp
+static jmp_buf jumpBuffer;
+
+// Custom SIGABRT handler that jumps back to our test
+static void sigabrt_handler(int signo) {
+    (void)signo;  // unused parameter
+    longjmp(jumpBuffer, 1);
+}
+
+// Custom SIGFPE handler that jumps back to our test
+static void sigfpe_handler(int signo) {
+    (void)signo;  // unused parameter
+    longjmp(jumpBuffer, 1);
+}
+
+// The macro sets up the signal handler, calls setjmp,
+// executes your statement, and checks whether we jumped
+// due to an assertion (SIGABRT).
+#define SHOULD_ASSERT(STMT)                                          \
+    do {                                                             \
+        total_tests++;                                               \
+        /* Install custom signal handler for SIGABRT */              \
+        signal(SIGABRT, sigabrt_handler);                            \
+                                                                     \
+        /* setjmp returns 0 initially, and 1 if we longjmp from the handler */ \
+        if (setjmp(jumpBuffer) == 0) {                               \
+            /* Execute the statement (which should trigger assert) */\
+            (void)(STMT);                                            \
+            /* If we get here, no abort/assert occurred */           \
+            printf("FAIL: Assertion not triggered by '%s'\n", #STMT);\
+            failed_tests++;                                          \
+        } else {                                                     \
+            /* We arrived via longjmp => an assert called abort */   \
+            printf("PASS: Assertion triggered by '%s'\n", #STMT);    \
+            passed_tests++;                                          \
+        }                                                            \
+                                                                     \
+        /* Optionally restore default SIGABRT handler for safety */  \
+        signal(SIGABRT, SIG_DFL);                                    \
+    } while (0)
+
+// The macro sets up the signal handler, calls setjmp,
+// executes your statement, and checks whether we jumped
+// due to an exception (SIGFPE).
+#define SHOULD_FPE(STMT)                                             \
+    do {                                                             \
+        total_tests++;                                               \
+        /* Install custom signal handler for SIGFPE */               \
+        signal(SIGFPE, sigfpe_handler);                              \
+                                                                     \
+        /* setjmp returns 0 initially, and 1 if we longjmp from the handler */ \
+        if (setjmp(jumpBuffer) == 0) {                               \
+            /* Execute the statement (which should trigger exception) */\
+            (void)(STMT);                                            \
+            /* If we get here, no abort/assert occurred */           \
+            printf("FAIL: Exception not triggered by '%s'\n", #STMT);\
+            failed_tests++;                                          \
+        } else {                                                     \
+            /* We arrived via longjmp => an exception called abort */   \
+            printf("PASS: Exception triggered by '%s'\n", #STMT);    \
+            passed_tests++;                                          \
+        }                                                            \
+                                                                     \
+        /* Optionally restore default SIGFPE handler for safety */   \
+        signal(SIGFPE, SIG_DFL);                                     \
+    } while (0)
+
+// Helper macro for testing valid decimal strings
+#define TEST_VALID_DECIMAL(str) do { \
+    total_tests++; \
+    if (!crypto_is_valid_decimal(str)) { \
+        printf("FAIL: Valid decimal '%s' was rejected\n", str); \
+        failed_tests++; \
+    } else { \
+        passed_tests++; \
+    } \
+} while(0)
+
+// Helper macro for testing invalid decimal strings
+#define TEST_INVALID_DECIMAL(str) do { \
+    total_tests++; \
+    if (crypto_is_valid_decimal(str)) { \
+        printf("FAIL: Invalid decimal '%s' was accepted\n", str); \
+        failed_tests++; \
+    } else { \
+        passed_tests++; \
+    } \
+} while(0)
+
+void verify_string_parsing(crypto_val_t* val, const char* expected_val_as_str) {
     total_tests++;
-    
-    // Convert result to string for comparison
-    char* str = mpq_get_str(NULL, 10, result->value);
+    char* str = mpz_get_str(NULL, 10, val->value);
     if (!str) {
         printf("ERROR: Failed to convert result to string\n");
         failed_tests++;
         return;
     }
-    
-    // Create expected value
-    crypto_amount_t expected;
-    switch (type) {
-        case CRYPTO_BITCOIN:
-            crypto_init_bitcoin(&expected, expected_unit);
-            break;
-        case CRYPTO_ETHEREUM:
-            crypto_init_ethereum(&expected, expected_unit);
-            break;
-        default:
-            printf("ERROR: Invalid crypto type\n");
-            free(str);
-            failed_tests++;
-            return;
+    if (strcmp(str, expected_val_as_str) != 0) {
+        printf("ERROR: Expected %s, got %s\n", expected_val_as_str, str);
+        failed_tests++;
+        return;
     }
-    
-    crypto_set_value(&expected, type, expected_unit, expected_whole, expected_fraction);
-    
-    // Apply sign if needed
-    if (is_negative) {
-        mpq_neg(expected.value, expected.value);
-    }
-    
-    // Compare
-    int cmp = crypto_cmp(result, &expected);
-    printf("%s = ", operation);
-    crypto_print_amount(result);
-    printf("  %s\n", cmp == 0 ? "✓ PASSED" : "✗ FAILED");
-    
-    if (cmp != 0) {
-        printf("  Expected: ");
-        crypto_print_amount(&expected);
+    free(str);
+    passed_tests++;
+}
+
+void verify_decimal_string(crypto_val_t* val, crypto_denom_t denom, const char* expected_val_as_str) {
+    char* str = crypto_to_decimal_str(val, denom);
+    total_tests++;
+    if (strcmp(str, expected_val_as_str) != 0) {
+        printf("ERROR: Expected %s, got %s\n", expected_val_as_str, str);
         failed_tests++;
     } else {
         passed_tests++;
     }
-    
-    // Verify the result has the correct type and unit
-    if (result->type != type) {
-        printf("  ERROR: Result has wrong crypto type (got %d, expected %d)\n", result->type, type);
-        failed_tests++;
-    }
-    if (result->unit != expected_unit) {
-        printf("  ERROR: Result has wrong unit (got %d, expected %d)\n", result->unit, expected_unit);
-        failed_tests++;
-    }
-    
     free(str);
-    crypto_clear(&expected);
 }
 
-void test_bitcoin_conversions() {
-    printf("\n=== Testing Bitcoin Conversions ===\n");
-    
-    // Test 1: 1 BTC to SAT
-    crypto_amount_t btc, sat;
-    crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
-    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);  // 1.0 BTC
-    
-    crypto_convert_to_unit(&btc, &sat, BTC_UNIT_SATOSHI);
-    printf("1 BTC = ");
-    crypto_print_amount(&sat);
-    
-    // Test 2: 100000000 SAT to BTC
-    crypto_init_bitcoin(&sat, BTC_UNIT_SATOSHI);
-    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 100000000, 0);  // 100000000 SAT
-    
-    crypto_convert_to_unit(&sat, &btc, BTC_UNIT_BITCOIN);
-    printf("100000000 SAT = ");
-    crypto_print_amount(&btc);
-    
-    // Test 3: 0.001 BTC to mBTC
-    crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
-    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
-    
-    crypto_amount_t mbtc;
-    crypto_convert_to_unit(&btc, &mbtc, BTC_UNIT_MILLIBIT);
-    printf("0.001 BTC = ");
-    crypto_print_amount(&mbtc);
-    
-    // Test 4: 1.234 mBTC
-    crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
-    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 234);  // 1.234 mBTC
-    printf("1.234 mBTC = ");
-    crypto_print_amount(&mbtc);
-    
-    // Test 5: 123.45 μBTC
-    crypto_amount_t ubtc;
-    crypto_init_bitcoin(&ubtc, BTC_UNIT_MICROBIT);
-    crypto_set_value(&ubtc, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45);  // 123.45 μBTC
-    printf("123.45 μBTC = ");
-    crypto_print_amount(&ubtc);
-    
-    // Cleanup
-    crypto_clear(&btc);
-    crypto_clear(&sat);
-    crypto_clear(&mbtc);
-    crypto_clear(&ubtc);
+void verify_comparison(const crypto_val_t* a, const crypto_val_t* b, const char* a_str, const char* b_str, int expected_result) {
+    int cmp_result = crypto_cmp(a, b);
+    total_tests++;
+    printf("%s %s %s: %s\n",
+            a_str,
+            cmp_result == 0 ? "==" : (cmp_result > 0 ? ">" : "<"),
+            b_str,
+            cmp_result == expected_result ? "✓ PASSED" : "✗ FAILED");
+    if (cmp_result != expected_result) {
+        failed_tests++;
+    } else {
+        passed_tests++;
+    }
 }
 
-void test_unit_info() {
-    printf("\n=== Testing Unit Information ===\n");
-    
-    const crypto_unit_t* unit;
-    
-    unit = crypto_get_unit_info(CRYPTO_BITCOIN, BTC_UNIT_BITCOIN);
-    printf("Bitcoin unit info:\n");
-    printf("  Name: %s\n", unit->name);
-    printf("  Symbol: %s\n", unit->symbol);
-    printf("  Denominator: %llu\n", unit->denominator);
-    printf("  Decimals: %u\n", unit->decimals);
-    
-    unit = crypto_get_unit_info(CRYPTO_BITCOIN, BTC_UNIT_SATOSHI);
-    printf("\nSatoshi unit info:\n");
-    printf("  Name: %s\n", unit->name);
-    printf("  Symbol: %s\n", unit->symbol);
-    printf("  Denominator: %llu\n", unit->denominator);
-    printf("  Decimals: %u\n", unit->decimals);
+void verify_zero_comparison(const crypto_val_t* a, int comparison, int expected_result) {
+    int cmp_result;
+    switch (comparison) {
+        case 0:
+            cmp_result = crypto_eq_zero(a);
+            break;
+        case 1:
+            cmp_result = crypto_gt_zero(a);
+            break;
+        case -1:
+            cmp_result = crypto_lt_zero(a);
+            break;
+        default:
+            printf("ERROR: Invalid comparison type\n");
+            failed_tests++;
+            return;
+    }
+    total_tests++;
+    printf("%s %s %s %s: %s\n",
+            expected_result == 1 ? "" : "NOT",
+            mpz_get_str(NULL, 10, a->value),
+            a->crypto_type == CRYPTO_BITCOIN ? "SAT" : "Unknown",
+            comparison == 0 ? "== 0" : (comparison > 0 ? "> 0" : "< 0"),
+            cmp_result == expected_result ? "✓ PASSED" : "✗ FAILED");
+    if (cmp_result != expected_result) {
+        failed_tests++;
+    } else {
+        passed_tests++;
+    }
 }
 
-void test_invalid_units() {
-    printf("\n=== Testing Invalid Units ===\n");
-    
-    int result;
-    
-    // Test invalid crypto type
-    result = crypto_is_valid_unit(CRYPTO_COUNT, BTC_UNIT_BITCOIN);
-    printf("Invalid crypto type test: %s\n", result ? "FAILED" : "PASSED");
-    
-    // Test invalid unit
-    result = crypto_is_valid_unit(CRYPTO_BITCOIN, BTC_UNIT_COUNT);
-    printf("Invalid unit test: %s\n", result ? "FAILED" : "PASSED");
+// Helper function to execute a SQL query and verify the result
+static void verify_sql_result(sqlite3 *db, const char* sql, const char* expected_result, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    if (rc != SQLITE_OK) {
+        printf("Failed to prepare statement: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    rc = sqlite3_step(stmt);
+    total_tests++;
+    if (rc == SQLITE_ROW) {
+        const char* result = (const char*)sqlite3_column_text(stmt, 0);
+        if (strcmp(result, expected_result) != 0) {
+            printf("FAIL: Expected %s, got %s\n", expected_result, result);
+            failed_tests++;
+        } else {
+            printf("PASS: %s\n", test_name);
+            passed_tests++;
+        }
+    } else {
+        printf("FAIL: %s should have returned a row. Error: %s\n", test_name, sqlite3_errmsg(db));
+        failed_tests++;
+    }
+    sqlite3_finalize(stmt);
+}
+
+// Helper function to verify SQL error handling
+static void verify_sql_parse_error(sqlite3 *db, const char* sql, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("PASS: %s\n", test_name);
+        passed_tests++;
+    } else {
+        printf("FAIL: Should have rejected invalid input\n");
+        failed_tests++;
+        sqlite3_finalize(stmt);
+    }
+}
+
+// Helper function to verify SQL error handling
+static void verify_sql_runtime_error(sqlite3 *db, const char* sql, const char* test_name) {
+    sqlite3_stmt *stmt = NULL;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);
+    total_tests++;
+    if (rc != SQLITE_OK) {
+        printf("FAIL: should have parsed input %s\n", test_name);
+        failed_tests++;
+    } else {
+        rc = sqlite3_step(stmt);
+        if (rc != SQLITE_ERROR) {
+            printf("FAIL: should have raised runtime error %s\n", test_name);
+            failed_tests++;
+        } else {
+            printf("PASS: %s\n", test_name);
+            passed_tests++;
+        }
+    }
+    sqlite3_finalize(stmt);
 }
 
 void test_arithmetic_operations() {
     printf("\n=== Testing Arithmetic Operations ===\n");
     
     // Test 1: Adding different units (1 BTC + 100 mBTC = 1.1 BTC)
-    crypto_amount_t btc, mbtc, result;
-    crypto_init_bitcoin(&btc, BTC_UNIT_BITCOIN);
-    crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
+    crypto_val_t btc, mbtc, result;
+    crypto_init(&btc, CRYPTO_BITCOIN);
+    crypto_init(&mbtc, CRYPTO_BITCOIN);
+    crypto_init(&result, CRYPTO_BITCOIN);
     
-    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);      // 1.0 BTC
-    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 100, 0);  // 100 mBTC = 0.1 BTC
+    crypto_set_from_decimal(&btc, BTC_DENOM_BITCOIN, "1.1");    // 1.1 BTC
+    crypto_set_from_decimal(&mbtc, BTC_DENOM_MILLIBIT, "100");  // 100 mBTC = 0.1 BTC
     
-    crypto_add(&btc, &mbtc, &result);
-    verify_result("1 BTC + 100 mBTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 10000000, 0);
-    
+    crypto_add(&result, &btc, &mbtc);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "1.20000000");
+
     // Test 2: Subtracting different units (1 BTC - 50000000 SAT = 0.5 BTC)
-    crypto_amount_t sat;
-    crypto_init_bitcoin(&sat, BTC_UNIT_SATOSHI);
-    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 50000000, 0);  // 0.5 BTC in satoshis
+    crypto_val_t sat;
+    crypto_init(&sat, CRYPTO_BITCOIN);
+    crypto_set_from_decimal(&sat, BTC_DENOM_SATOSHI, "50000000");  // 0.5 BTC in satoshis
     
-    crypto_sub(&btc, &sat, &result);
-    verify_result("1 BTC - 50000000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000, 0);
-    
-    // Test 3: Comparison of different units (50000000 SAT == 500000 μBTC)
-    crypto_amount_t ubtc;
-    crypto_init_bitcoin(&ubtc, BTC_UNIT_MICROBIT);
-    crypto_set_value(&ubtc, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 500000, 0);  // 0.5 BTC in μBTC
-    
-    int cmp_result = crypto_cmp(&sat, &ubtc);
-    printf("50000000 SAT %s 500000 μBTC: %s\n", 
-           cmp_result == 0 ? "==" : (cmp_result > 0 ? ">" : "<"),
-           cmp_result == 0 ? "✓ PASSED" : "✗ FAILED");
-    
-    // Test 4: Complex arithmetic (1 BTC + 100 mBTC - 50000000 SAT = 0.6 BTC)
-    crypto_amount_t temp;
-    crypto_add(&btc, &mbtc, &temp);
-    crypto_sub(&temp, &sat, &result);
-    verify_result("1 BTC + 100 mBTC - 50000000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 60000000, 0);
-    
-    // Test 5: Small value arithmetic (0.001 BTC + 1000 SAT = 0.002 BTC)
-    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 100000);  // 0.001 BTC
-    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 1000, 0);    // 1000 SAT = 0.00001 BTC
-    
-    crypto_add(&btc, &sat, &result);
-    verify_result("0.001 BTC + 1000 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 101000, 0);
-    
-    // Test 6: Precision test (0.00000001 BTC + 1 SAT = 0.00000002 BTC)
-    crypto_set_value(&btc, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 1);       // 0.00000001 BTC
-    crypto_set_value(&sat, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 1, 0);       // 1 SAT = 0.00000001 BTC
-    
-    crypto_add(&btc, &sat, &result);
-    verify_result("0.00000001 BTC + 1 SAT", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 2, 0);
-    
+    crypto_sub(&result, &btc, &sat);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "0.60000000");
+
+    // Test 3: Subtracting a negative value (1.1 BTC - (-0.5 BTC) = 1.6 BTC)
+    crypto_set_from_decimal(&sat, BTC_DENOM_SATOSHI, "-50000000");  // -0.5 BTC in satoshis
+    crypto_sub(&result, &btc, &sat);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "1.60000000");
+
     // Cleanup
     crypto_clear(&btc);
     crypto_clear(&mbtc);
     crypto_clear(&sat);
-    crypto_clear(&ubtc);
     crypto_clear(&result);
-    crypto_clear(&temp);
+}
+
+void test_comparison_operations() {
+    printf("\n=== Testing Comparison Operations ===\n");
+
+    crypto_val_t a, b;
+    crypto_init(&a, CRYPTO_BITCOIN);
+    crypto_init(&b, CRYPTO_BITCOIN);
+
+    // Test 1: Comparison of different units (50000000 SAT == 500000 μBTC)
+    crypto_set_from_decimal(&a, BTC_DENOM_SATOSHI, "50000000");  // 0.5 BTC in satoshis
+    crypto_set_from_decimal(&b, BTC_DENOM_MICROBIT, "500000");    // 0.5 BTC in μBTC
+
+    verify_comparison(&a, &b, "50000000 SAT", "500000 μBTC", 0);
+
+    // Test 2: Comparison of different units (50000000 SAT > 500000 μBTC)
+    crypto_set_from_decimal(&a, BTC_DENOM_SATOSHI, "50000001");  // 0.5 BTC in satoshis
+    crypto_set_from_decimal(&b, BTC_DENOM_MICROBIT, "500000");    // 0.5 BTC in μBTC
+
+    verify_comparison(&a, &b, "50000001 SAT", "500000 μBTC", 1);
+
+    // Test 3: Comparison of different units (49999999 SAT < 500000 μBTC)
+    crypto_set_from_decimal(&a, BTC_DENOM_SATOSHI, "49999999");  // 0.49999999 BTC in satoshis
+    crypto_set_from_decimal(&b, BTC_DENOM_MICROBIT, "500000");    // 0.5 BTC in μBTC
+
+    verify_comparison(&a, &b, "49999999 SAT", "500000 μBTC", -1);
+
+    // Test 5: Test comparison of mixed sign and denominations
+    crypto_set_from_decimal(&a, BTC_DENOM_SATOSHI, "1");  // 1 BTC in satoshis
+    crypto_set_from_decimal(&b, BTC_DENOM_MICROBIT, "-1");    // -1 BTC in μBTC
+
+    verify_comparison(&a, &b, "1 SAT", "-1 μBTC", 1);
+
+    // Cleanup
+    crypto_clear(&a);
+    crypto_clear(&b);
+}
+
+void test_zero_comparison() {
+    printf("\n=== Testing Zero Comparison ===\n");
+
+    crypto_val_t a;
+    crypto_init(&a, CRYPTO_BITCOIN);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_SATOSHI, "0");
+    verify_zero_comparison(&a, 0, 1);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_MICROBIT, "0");
+    verify_zero_comparison(&a, 0, 1);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_MICROBIT, "-0");
+    verify_zero_comparison(&a, 0, 1);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_MICROBIT, "-1");
+    verify_zero_comparison(&a, 0, 0);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_MICROBIT, "1");
+    verify_zero_comparison(&a, 1, 1);
+
+    crypto_set_from_decimal(&a, BTC_DENOM_MICROBIT, "-1");
+    verify_zero_comparison(&a, -1, 1);
+
 }
 
 void test_decimal_string_parsing() {
     printf("\n=== Testing Decimal String Parsing ===\n");
     
     // Test 1: Basic positive decimal
-    crypto_amount_t amount;
-    crypto_init_bitcoin(&amount, BTC_UNIT_BITCOIN);
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "1.23456789");
-    verify_result("1.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 0);
+    crypto_val_t amount;
+    crypto_init(&amount, CRYPTO_BITCOIN);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1.23456789");
+    verify_string_parsing(&amount, "123456789");
     
     // Test 2: Negative decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "-0.00000001");
-    verify_result("-0.00000001 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 1, 1);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "-0.00000001");
+    verify_string_parsing(&amount, "-1");
     
     // Test 3: Whole number
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "42");
-    verify_result("42 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 42, 0, 0);
-    
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "42");
+    verify_string_parsing(&amount, "4200000000");
+        
     // Test 4: Small value in satoshis
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, "12345");
-    verify_result("12345 SAT", &amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 12345, 0, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_SATOSHI, "12345");
+    verify_string_parsing(&amount, "12345");
     
     // Test 5: Millibitcoin with decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, "1.23456");
-    verify_result("1.23456 mBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 23456, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_MILLIBIT, "1.23456");
+    verify_string_parsing(&amount, "123456");
     
     // Test 6: Microbitcoin with decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, "123.45");
-    verify_result("123.45 μBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_MICROBIT, "123.45");
+    verify_string_parsing(&amount, "12345");
     
     // Test 7: Zero with decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "0.00000000");
-    verify_result("0.00000000 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 0, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "0.00000000");
+    verify_string_parsing(&amount, "0");
     
     // Test 8: Leading zeros
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "0001.23456789");
-    verify_result("0001.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "0001.23456789");
+    verify_string_parsing(&amount, "123456789");
     
     // Test 9: Negative values in different units
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, "-1.23456789");
-    verify_result("-1.23456789 BTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 23456789, 1);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "-1.23456789");
+    verify_string_parsing(&amount, "-123456789");
     
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, "-12345");
-    verify_result("-12345 SAT", &amount, CRYPTO_BITCOIN, BTC_UNIT_SATOSHI, 12345, 0, 1);
+    crypto_set_from_decimal(&amount, BTC_DENOM_SATOSHI, "-12345");
+    verify_string_parsing(&amount, "-12345");
     
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, "-1.23456");
-    verify_result("-1.23456 mBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 1, 23456, 1);
+    crypto_set_from_decimal(&amount, BTC_DENOM_MILLIBIT, "-1.2345");
+    verify_string_parsing(&amount, "-123450");
     
-    crypto_set_value_from_decimal(&amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, "-123.45");
-    verify_result("-123.45 μBTC", &amount, CRYPTO_BITCOIN, BTC_UNIT_MICROBIT, 123, 45, 1);
+    crypto_set_from_decimal(&amount, BTC_DENOM_MICROBIT, "-123.45");
+    verify_string_parsing(&amount, "-12345");
     
+    // Test 10: Leading spaces
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "  1.23456789");
+    verify_string_parsing(&amount, "123456789");
+
+    // Test 11: Trailing spaces
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1.23456789  ");
+    verify_string_parsing(&amount, "123456789");
+    
+    // Test 12: Test with a large number of decimal places (should be truncated)
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1.23456789012345678901234567890123456789");
+    verify_string_parsing(&amount, "123456789");
+
+    // Test 13: Test an invalid decimal string (maybe these should assert?)
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "a.23456789012345678901234567890123456789a");
+    verify_string_parsing(&amount, "23456789");
+
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1.a3456789012345678901234567890123456789");
+    verify_string_parsing(&amount, "100000000");
+
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "-a.a");
+    verify_string_parsing(&amount, "0");
+
+    // Test 15: Test assertions
+    SHOULD_ASSERT(crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, NULL));
+    SHOULD_ASSERT(crypto_set_from_decimal(NULL, BTC_DENOM_BITCOIN, "1"));
+    SHOULD_ASSERT(crypto_set_from_decimal(&amount, 42, "1"));
+    SHOULD_ASSERT(crypto_set_from_decimal(&amount, ETH_DENOM_ETHER, "1"));
+
     // Cleanup
     crypto_clear(&amount);
 }
 
-void test_ethereum_conversions() {
-    printf("\n=== Testing Ethereum Conversions ===\n");
-    
-    // Test 1: 1 ETH to WEI
-    crypto_amount_t eth, wei;
-    crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
-    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);  // 1.0 ETH
-    
-    crypto_convert_to_unit(&eth, &wei, ETH_UNIT_WEI);
-    printf("1 ETH = ");
-    crypto_print_amount(&wei);
-    
-    // Test 2: 1000000000 GWEI to ETH
-    crypto_amount_t gwei;
-    crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 1000000000, 0);  // 1000000000 GWEI
-    
-    crypto_convert_to_unit(&gwei, &eth, ETH_UNIT_ETHER);
-    printf("1000000000 GWEI = ");
-    crypto_print_amount(&eth);
-    
-    // Test 3: 0.001 ETH to GWEI
-    crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
-    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 1000000000000000);  // 0.001 ETH
-    
-    crypto_convert_to_unit(&eth, &gwei, ETH_UNIT_GWEI);
-    printf("0.001 ETH = ");
-    crypto_print_amount(&gwei);
-    
-    // Cleanup
-    crypto_clear(&eth);
-    crypto_clear(&wei);
-    crypto_clear(&gwei);
-}
+void test_decimal_string_conversion() {
+    printf("\n=== Testing Decimal String Conversion ===\n");
 
-void test_ethereum_unit_info() {
-    printf("\n=== Testing Ethereum Unit Information ===\n");
-    
-    const crypto_unit_t* unit;
-    
-    unit = crypto_get_unit_info(CRYPTO_ETHEREUM, ETH_UNIT_ETHER);
-    printf("Ether unit info:\n");
-    printf("  Name: %s\n", unit->name);
-    printf("  Symbol: %s\n", unit->symbol);
-    printf("  Denominator: %llu\n", unit->denominator);
-    printf("  Decimals: %u\n", unit->decimals);
-    
-    unit = crypto_get_unit_info(CRYPTO_ETHEREUM, ETH_UNIT_GWEI);
-    printf("\nGwei unit info:\n");
-    printf("  Name: %s\n", unit->name);
-    printf("  Symbol: %s\n", unit->symbol);
-    printf("  Denominator: %llu\n", unit->denominator);
-    printf("  Decimals: %u\n", unit->decimals);
-    
-    unit = crypto_get_unit_info(CRYPTO_ETHEREUM, ETH_UNIT_WEI);
-    printf("\nWei unit info:\n");
-    printf("  Name: %s\n", unit->name);
-    printf("  Symbol: %s\n", unit->symbol);
-    printf("  Denominator: %llu\n", unit->denominator);
-    printf("  Decimals: %u\n", unit->decimals);
-}
-
-void test_ethereum_arithmetic() {
-    printf("\n=== Testing Ethereum Arithmetic Operations ===\n");
-    
-    // Test 1: Adding different units (1 ETH + 100 GWEI = 1.0000001 ETH)
-    crypto_amount_t eth, gwei, result;
-    crypto_init_ethereum(&eth, ETH_UNIT_ETHER);
-    crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
-    
-    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1.0 ETH
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 100, 0);    // 100 GWEI = 0.0000001 ETH
-    
-    crypto_add(&eth, &gwei, &result);
-    verify_result("1 ETH + 100 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 100000000000, 0);
-    
-    // Test 2: Subtracting different units (1 ETH - 500000000 GWEI = 0.5 ETH)
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 500000000, 0);  // 0.5 ETH in gwei
-    
-    crypto_sub(&eth, &gwei, &result);
-    verify_result("1 ETH - 500000000 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000, 0);
-    
-    // Test 3: Comparison of different units (500000000 GWEI == 0.5 ETH)
-    crypto_amount_t half_eth;
-    crypto_init_ethereum(&half_eth, ETH_UNIT_ETHER);
-    crypto_set_value(&half_eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000);  // 0.5 ETH
-    
-    int cmp_result = crypto_cmp(&gwei, &half_eth);
-    printf("500000000 GWEI %s 0.5 ETH: %s\n", 
-           cmp_result == 0 ? "==" : (cmp_result > 0 ? ">" : "<"),
-           cmp_result == 0 ? "✓ PASSED" : "✗ FAILED");
-    if (cmp_result == 0) passed_tests++; else failed_tests++;
-    total_tests++;
-    
-    // Test 4: Adding ETH and WEI (1 ETH + 1000000000000000000 WEI = 2 ETH)
-    crypto_amount_t wei;
-    crypto_init_ethereum(&wei, ETH_UNIT_WEI);
-    crypto_set_value(&wei, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1000000000000000000, 0);  // 1 ETH in wei
-    
-    crypto_add(&eth, &wei, &result);
-    verify_result("1 ETH + 1000000000000000000 WEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2, 0, 0);
-    
-    // Test 5: Subtracting WEI from GWEI (1 GWEI - 1000000000 WEI = 0.999 GWEI)
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 1000000000, 0);  // 1 GWEI
-    crypto_set_value(&wei, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1000000000, 0);    // 0.001 GWEI in wei
-    
-    crypto_sub(&gwei, &wei, &result);
-    verify_result("1 GWEI - 1000000000 WEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 999999999, 0, 0);
-    
-    // Test 6: Complex arithmetic with all units (1 ETH + 100 GWEI - 1 ETH = 100 GWEI)
-    crypto_set_value(&eth, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1 ETH
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 100, 0);    // 100 GWEI
-    
-    // First add ETH and GWEI
-    crypto_add(&eth, &gwei, &result);
-    
-    // Then subtract 1 ETH using in-place subtraction
-    crypto_sub_inplace(&result, &eth);
-    
-    verify_result("1 ETH + 100 GWEI - 1 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 100000000000, 0);
-    
-    // Cleanup
-    crypto_clear(&eth);
-    crypto_clear(&gwei);
-    crypto_clear(&wei);
-    crypto_clear(&result);
-    crypto_clear(&half_eth);
-}
-
-void test_ethereum_decimal_string_parsing() {
-    printf("\n=== Testing Ethereum Decimal String Parsing ===\n");
-    
+    crypto_val_t amount;
+    crypto_init(&amount, CRYPTO_BITCOIN);
     // Test 1: Basic positive decimal
-    crypto_amount_t amount;
-    crypto_init_ethereum(&amount, ETH_UNIT_ETHER);
-    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "1.234567890123456789");
-    verify_result("1.234567890123456789 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 234567890123456789, 0);
-    
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1.23456789");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "1.23456789");
+
     // Test 2: Negative decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "-0.000000000000000001");
-    verify_result("-0.000000000000000001 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 1, 1);
-    
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "-0.00000001");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "-0.00000001");
+
     // Test 3: Whole number
-    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, "42");
-    verify_result("42 ETH", &amount, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 42, 0, 0);
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "42");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "42");
+
+    // Test 4: Small value in satoshis
+    crypto_set_from_decimal(&amount, BTC_DENOM_SATOSHI, "12345");
+    verify_decimal_string(&amount, BTC_DENOM_SATOSHI, "12345");
     
-    // Test 4: Small value in gwei
-    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, "12345");
-    verify_result("12345 GWEI", &amount, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 12345, 0, 0);
+    // Test 6: Test a conversion from BITCOIN to SATOSHI
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "1");
+    verify_decimal_string(&amount, BTC_DENOM_SATOSHI, "100000000");
     
-    // Test 5: Wei with decimal
-    crypto_set_value_from_decimal(&amount, CRYPTO_ETHEREUM, ETH_UNIT_WEI, "1234567890123456789");
-    verify_result("1234567890123456789 WEI", &amount, CRYPTO_ETHEREUM, ETH_UNIT_WEI, 1234567890123456789, 0, 0);
+    // Test 7: Test a conversion from SATOSHI to BITCOIN
+    crypto_set_from_decimal(&amount, BTC_DENOM_SATOSHI, "100000000");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "1");
     
-    // Cleanup
+    // Test 8: Test a conversion from MILLIBITCOIN to BITCOIN
+    crypto_set_from_decimal(&amount, BTC_DENOM_MILLIBIT, "123456");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "123.45600000");
+
+    // Test 9: Test a conversion from MICROBITCOIN to BITCOIN
+    crypto_set_from_decimal(&amount, BTC_DENOM_MICROBIT, "123456789");
+    verify_decimal_string(&amount, BTC_DENOM_BITCOIN, "123.45678900");
+
+    // Test 10: Test a conversion from BITCOIN to MILLIBITCOIN
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "123.456");
+    verify_decimal_string(&amount, BTC_DENOM_MILLIBIT, "123456");
+    
+    // Test 11: Test a conversion from BITCOIN to MICROBITCOIN
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "123.456");
+    verify_decimal_string(&amount, BTC_DENOM_MICROBIT, "123456000");
+
+    // Test 12: Negative decimal and convert to Microbitcoin
+    crypto_set_from_decimal(&amount, BTC_DENOM_BITCOIN, "-0.00000001");
+    verify_decimal_string(&amount, BTC_DENOM_MICROBIT, "-0.01");
+
+    // Test 13: Test assertions
+    SHOULD_ASSERT(verify_decimal_string(&amount, ETH_DENOM_ETHER, "-0.01"));
+    SHOULD_ASSERT(verify_decimal_string(NULL, BTC_DENOM_BITCOIN, "-0.01"));
+    SHOULD_ASSERT(verify_decimal_string(&amount, 42, "-0.01"));
+
     crypto_clear(&amount);
 }
 
 void test_multiplication_division() {
     printf("\n=== Testing Multiplication and Division Operations ===\n");
     
-    // Test 1: Bitcoin multiplication (2 BTC * 0.5 BTC = 1 BTC)
-    crypto_amount_t btc1, btc2, result;
-    crypto_init_bitcoin(&btc1, BTC_UNIT_BITCOIN);
-    crypto_init_bitcoin(&btc2, BTC_UNIT_BITCOIN);
-    
-    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
-    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
-    
-    crypto_mul(&btc1, &btc2, &result);
-    verify_result("2 BTC * 0.5 BTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
-    
-    // Test 2: Bitcoin division (2 BTC / 0.5 BTC = 4 BTC)
-    crypto_div(&btc1, &btc2, &result);
-    verify_result("2 BTC / 0.5 BTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 4, 0, 0);
-    
-    // Test 3: Ethereum multiplication (2 ETH * 0.5 ETH = 1 ETH)
-    crypto_amount_t eth1, eth2;
-    crypto_init_ethereum(&eth1, ETH_UNIT_ETHER);
-    crypto_init_ethereum(&eth2, ETH_UNIT_ETHER);
-    
-    crypto_set_value(&eth1, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2, 0);      // 2.0 ETH
-    crypto_set_value(&eth2, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 0, 500000000000000000);  // 0.5 ETH
-    
-    crypto_mul(&eth1, &eth2, &result);
-    verify_result("2 ETH * 0.5 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0, 0);
-    
-    // Test 4: Ethereum division (2 ETH / 0.5 ETH = 4 ETH)
-    crypto_div(&eth1, &eth2, &result);
-    verify_result("2 ETH / 0.5 ETH", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 4, 0, 0);
-    
-    // Test 5: In-place multiplication (2 BTC *= 0.5 BTC = 1 BTC)
-    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
-    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
-    
-    crypto_mul_inplace(&btc1, &btc2);
-    verify_result("2 BTC *= 0.5 BTC", &btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
-    
-    // Test 6: In-place division (1 BTC /= 0.5 BTC = 2 BTC)
-    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0);      // 1.0 BTC
-    crypto_set_value(&btc2, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 0, 50000000);  // 0.5 BTC
-    
-    crypto_div_inplace(&btc1, &btc2);
-    verify_result("1 BTC /= 0.5 BTC", &btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0, 0);
-    
-    // Test 7: Different units multiplication (2 BTC * 500 mBTC = 1 BTC)
-    crypto_amount_t mbtc;
-    crypto_init_bitcoin(&mbtc, BTC_UNIT_MILLIBIT);
-    crypto_set_value(&btc1, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 2, 0);      // 2.0 BTC
-    crypto_set_value(&mbtc, CRYPTO_BITCOIN, BTC_UNIT_MILLIBIT, 500, 0);   // 0.5 BTC in mBTC
-    
-    crypto_mul(&btc1, &mbtc, &result);
-    verify_result("2 BTC * 500 mBTC", &result, CRYPTO_BITCOIN, BTC_UNIT_BITCOIN, 1, 0, 0);
-    
-    // Test 8: Different units division (1 ETH / 500 GWEI = 2 ETH)
-    crypto_amount_t gwei;
-    crypto_init_ethereum(&gwei, ETH_UNIT_GWEI);
-    crypto_set_value(&eth1, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 1, 0);      // 1.0 ETH
-    crypto_set_value(&gwei, CRYPTO_ETHEREUM, ETH_UNIT_GWEI, 500, 0);     // 0.5 ETH in GWEI
-    
-    crypto_div(&eth1, &gwei, &result);
-    verify_result("1 ETH / 500 GWEI", &result, CRYPTO_ETHEREUM, ETH_UNIT_ETHER, 2000000, 0, 0);
-    
+    // Test 1: Bitcoin multiplication (2 BTC * 2 = 4 BTC)
+    crypto_val_t btc1, result;
+    crypto_init(&btc1, CRYPTO_BITCOIN);
+    crypto_init(&result, CRYPTO_BITCOIN);
+    mpz_t scalar;
+    mpz_init(scalar);
+    mpz_set_ui(scalar, 2);
+
+    crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "2");      // 2.0 BTC
+    crypto_mul(&result, &btc1, &scalar);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "4");
+
+    // Test 2: Bitcoin division (2 BTC / 2 = 100000000 SAT)
+    crypto_div_truncate(&result, &btc1, &scalar);
+    verify_decimal_string(&result, BTC_DENOM_SATOSHI, "100000000");
+
+    // Test 3: Bitcoin signed multiplication (2 BTC * -2 = -4 BTC)
+    mpz_set_si(scalar, -2);
+    crypto_mul(&result, &btc1, &scalar);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "-4");
+
+    // Test 4: Bicoin division by 0
+    mpz_set_ui(scalar, 0);
+    SHOULD_FPE(crypto_div_truncate(&result, &btc1, &scalar));
+
+    // Test 5: Bitcoin division should truncate
+    crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "1.23456788");
+    mpz_set_ui(scalar, 3);
+    crypto_div_truncate(&result, &btc1, &scalar);
+    verify_decimal_string(&result, BTC_DENOM_BITCOIN, "0.41152262");
+
+    // Test 6: In-place multiplication (2 BTC *= 2 = 4 BTC)
+    crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "2");
+    mpz_set_ui(scalar, 2);
+    crypto_mul(&btc1, &btc1, &scalar);
+    verify_decimal_string(&btc1, BTC_DENOM_BITCOIN, "4");
+        
     // Cleanup
     crypto_clear(&btc1);
-    crypto_clear(&btc2);
-    crypto_clear(&eth1);
-    crypto_clear(&eth2);
-    crypto_clear(&mbtc);
-    crypto_clear(&gwei);
     crypto_clear(&result);
+    mpz_clear(scalar);
+}
+
+void test_decimal_validation() {
+    printf("\n=== Testing Decimal Validation ===\n");
+    
+    // Test valid cases
+    TEST_VALID_DECIMAL("123.45");
+    TEST_VALID_DECIMAL("  -123.45  ");
+    TEST_VALID_DECIMAL("+123");
+    TEST_VALID_DECIMAL("123");
+    TEST_VALID_DECIMAL("0.123");
+
+    // Test invalid cases
+    TEST_INVALID_DECIMAL("123.45.67");
+    TEST_INVALID_DECIMAL("abc");
+    TEST_INVALID_DECIMAL("123abc");
+    TEST_INVALID_DECIMAL("  ");
+    TEST_INVALID_DECIMAL("+");
+    TEST_INVALID_DECIMAL("123 456");
+
+    // Test edge cases
+    TEST_VALID_DECIMAL(".01");
+    TEST_VALID_DECIMAL("0.01");
+    TEST_VALID_DECIMAL("-.01");
+    TEST_VALID_DECIMAL("-0.01");
+}
+
+void test_nonzero_fraction_detection() {
+    printf("\n=== Testing Non-Zero Fraction Detection ===\n");
+    
+    // Helper macro for testing non-zero fraction detection
+    #define TEST_NONZERO_FRACTION(str, expected) do { \
+        total_tests++; \
+        bool result = crypto_has_nonzero_fraction(str); \
+        if (result != expected) { \
+            printf("FAIL: Expected %s to %shave non-zero fraction, but it %s\n", \
+                   str, expected ? "" : "not ", result ? "does" : "does not"); \
+            failed_tests++; \
+        } else { \
+            passed_tests++; \
+        } \
+    } while(0)
+    
+    // Test cases with non-zero fractions
+    TEST_NONZERO_FRACTION("123.45", true);
+    TEST_NONZERO_FRACTION("0.01", true);
+    TEST_NONZERO_FRACTION("-123.45", true);
+    TEST_NONZERO_FRACTION(" 123.45 ", true);
+    TEST_NONZERO_FRACTION("+123.45", true);
+    TEST_NONZERO_FRACTION(".01", true);
+    TEST_NONZERO_FRACTION("-.01", true);
+    TEST_NONZERO_FRACTION("0.00000001", true);
+    
+    // Test cases with zero fractions
+    TEST_NONZERO_FRACTION("123.0", false);
+    TEST_NONZERO_FRACTION("123.00", false);
+    TEST_NONZERO_FRACTION("-123.0", false);
+    TEST_NONZERO_FRACTION(" 123.0 ", false);
+    TEST_NONZERO_FRACTION("+123.0", false);
+    TEST_NONZERO_FRACTION("0.0", false);
+    TEST_NONZERO_FRACTION("-0.0", false);
+    TEST_NONZERO_FRACTION("0.00000000", false);
+    
+    // Test cases with no decimal point
+    TEST_NONZERO_FRACTION("123", false);
+    TEST_NONZERO_FRACTION("-123", false);
+    TEST_NONZERO_FRACTION(" 123 ", false);
+    TEST_NONZERO_FRACTION("+123", false);
+    TEST_NONZERO_FRACTION("0", false);
+    TEST_NONZERO_FRACTION("-0", false);
+}
+
+void test_sqlite_extension() {
+    printf("\n=== Testing SQLite Extension ===\n");
+    
+    // Initialize SQLite
+    sqlite3 *db;
+    char *err_msg = 0;
+    int rc = sqlite3_open(":memory:", &db);
+    if (rc != SQLITE_OK) {
+        printf("Cannot open database: %s\n", sqlite3_errmsg(db));
+        sqlite3_close(db);
+        return;
+    }
+
+    // Load the extension
+    sqlite3_enable_load_extension(db, 1);
+    rc = sqlite3_load_extension(db, "./crypto_decimal_extension.dylib", 0, &err_msg);
+    if (rc != SQLITE_OK) {
+        printf("Cannot load extension: %s\n", err_msg);
+        sqlite3_free(err_msg);
+        sqlite3_close(db);
+        return;
+    }
+
+    // Test cases for crypto_add
+    verify_sql_result(db, 
+        "SELECT crypto_add('ETH', 'GWEI', '1.234567891', '0.765432109')",
+        "2",
+        "Basic addition test");
+
+    verify_sql_result(db,
+        "SELECT crypto_add('ETH', 'GWEI', '-1.234567891', '2.234567891')",
+        "1",
+        "Addition with negative numbers");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_add('ETH', 'GWEI', 'invalid', '1.0')",
+        "Invalid input handling");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_add('ETH', 'GWEI', '1.0')",
+        "Wrong number of arguments handling");
+
+    // Test case for crypto_sum
+    const char* sql = "CREATE TABLE t(val TEXT);"
+                     "INSERT INTO t VALUES('1.234567890000000001'),('0.765432109999999999');"
+                     "SELECT crypto_sum('ETH', 'ETH', 'GWEI', val) FROM t;";
+    const char *pzTail = sql;
+
+    total_tests++;
+    sqlite3_stmt *stmt = NULL;
+    while ((rc = sqlite3_prepare_v2(db, pzTail, -1, &stmt, &pzTail)) == SQLITE_OK && stmt) {
+        if (sqlite3_stmt_readonly(stmt)) {
+            rc = sqlite3_step(stmt);
+            if (rc == SQLITE_ROW) {
+                const char* result = (const char*)sqlite3_column_text(stmt, 0);
+                if (strcmp(result, "2000000000") != 0) {
+                    printf("FAIL: Expected 2000000000, got %s\n", result);
+                    failed_tests++;
+                } else {
+                    printf("PASS: crypto_sum test with high precision values\n");
+                    passed_tests++;
+                }
+                break;
+            }
+        }
+        rc = sqlite3_step(stmt);
+    }
+    if (rc == SQLITE_ERROR) {
+        printf("Error preparing crypto_sum: %s\n", sqlite3_errmsg(db));
+        failed_tests++;
+        sqlite3_close(db);
+        return;
+    }
+    sqlite3_finalize(stmt);
+
+    // Test cases for crypto_sub
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '2', '1')",
+        "1",
+        "Basic subtraction test");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '1', '2')",
+        "-1",
+        "Subtraction with negative result");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('ETH', 'GWEI', '1.5', '0.5')",
+        "1",
+        "Subtraction with decimal values");
+
+    verify_sql_result(db,
+        "SELECT crypto_sub('BTC', 'mBTC', '1', '0.5')",
+        "0.50000",
+        "Subtraction and scale conversion with fractional result");
+
+    // Test cases for crypto_mul
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '2', '3')",
+        "6",
+        "Basic multiplication test");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '1.5', '2')",
+        "3",
+        "Multiplication with decimal values");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '-2', '3')",
+        "-6",
+        "Multiplication with negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('BTC', 'BTC', '0.5', '0.5')",
+        "0.25000000",
+        "Multiplication with fractional result");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_mul('ETH', 'GWEI', 'invalid', '2')",
+        "Invalid input handling for multiplication");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '2')",
+        "Wrong number of arguments handling for multiplication");
+
+    // Test cases for crypto_div
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '2')",
+        "3",
+        "Basic division test");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '3', '2')",
+        "1.500000000",
+        "Division with decimal result");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '-6', '2')",
+        "-3",
+        "Division with negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '-2')",
+        "-3",
+        "Division by negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('BTC', 'BTC', '1', '3')",
+        "0.33333333",
+        "Division with repeating decimal result");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '0')",
+        "Division by zero handling");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', 'invalid', '2')",
+        "Invalid input handling for division");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6')",
+        "Wrong number of arguments handling for division");
+
+    sqlite3_close(db);
 }
 
 int main() {
     printf("Starting Cryptomath Test Suite\n");
-    
-    test_unit_info();
-    test_bitcoin_conversions();
-    test_ethereum_unit_info();
-    test_ethereum_conversions();
-    test_invalid_units();
-    test_arithmetic_operations();
-    test_ethereum_arithmetic();
+
     test_decimal_string_parsing();
-    test_ethereum_decimal_string_parsing();
+    test_decimal_string_conversion();
+    test_arithmetic_operations();
+    test_comparison_operations();
+    test_zero_comparison();
     test_multiplication_division();
-    
+    test_decimal_validation();
+    test_nonzero_fraction_detection();
+    test_sqlite_extension();
     printf("\nTest Suite Summary:\n");
     printf("Total Tests: %d\n", total_tests);
     printf("Passed: %d\n", passed_tests);

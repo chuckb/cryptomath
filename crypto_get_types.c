@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "cypto_get_types.h"
-#include "cryptomath2.h"
+#include "cryptomath.h"
 /*
 ** Eponymous virtual table module: "crypto_types"
 ** Presents a table with two columns:

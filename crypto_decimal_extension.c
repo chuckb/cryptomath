@@ -26,8 +26,8 @@ SQLITE_EXTENSION_INIT1
 #include <stdio.h>
 #include <stdbool.h>
 #include <stdarg.h>
-#define CRYPTOMATH2_IMPLEMENTATION
-#include "cryptomath2.h"
+#define CRYPTOMATH_IMPLEMENTATION
+#include "cryptomath.h"
 
 typedef enum {
     ARITHMETIC_ADD,
