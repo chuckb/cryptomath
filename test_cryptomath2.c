@@ -484,36 +484,43 @@ void test_multiplication_division() {
     crypto_val_t btc1, result;
     crypto_init(&btc1, CRYPTO_BITCOIN);
     crypto_init(&result, CRYPTO_BITCOIN);
+    mpz_t scalar;
+    mpz_init(scalar);
+    mpz_set_ui(scalar, 2);
 
     crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "2");      // 2.0 BTC
-    
-    crypto_mul_i64(&result, &btc1, 2);
+    crypto_mul(&result, &btc1, &scalar);
     verify_decimal_string(&result, BTC_DENOM_BITCOIN, "4");
 
     // Test 2: Bitcoin division (2 BTC / 2 = 100000000 SAT)
-    crypto_divt_ui64(&result, &btc1, 2);
+    crypto_div_truncate(&result, &btc1, &scalar);
     verify_decimal_string(&result, BTC_DENOM_SATOSHI, "100000000");
 
     // Test 3: Bitcoin signed multiplication (2 BTC * -2 = -4 BTC)
-    crypto_mul_i64(&result, &btc1, -2);
+    mpz_set_si(scalar, -2);
+    crypto_mul(&result, &btc1, &scalar);
     verify_decimal_string(&result, BTC_DENOM_BITCOIN, "-4");
 
     // Test 4: Bicoin division by 0
-    SHOULD_FPE(crypto_divt_ui64(&result, &btc1, 0));
+    mpz_set_ui(scalar, 0);
+    SHOULD_FPE(crypto_div_truncate(&result, &btc1, &scalar));
 
     // Test 5: Bitcoin division should truncate
     crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "1.23456788");
-    crypto_divt_ui64(&result, &btc1, 3);
+    mpz_set_ui(scalar, 3);
+    crypto_div_truncate(&result, &btc1, &scalar);
     verify_decimal_string(&result, BTC_DENOM_BITCOIN, "0.41152262");
 
     // Test 6: In-place multiplication (2 BTC *= 2 = 4 BTC)
     crypto_set_from_decimal(&btc1, BTC_DENOM_BITCOIN, "2");
-    crypto_mul_i64(&btc1, &btc1, 2);
+    mpz_set_ui(scalar, 2);
+    crypto_mul(&btc1, &btc1, &scalar);
     verify_decimal_string(&btc1, BTC_DENOM_BITCOIN, "4");
         
     // Cleanup
     crypto_clear(&btc1);
     crypto_clear(&result);
+    mpz_clear(scalar);
 }
 
 void test_decimal_validation() {
@@ -539,6 +546,51 @@ void test_decimal_validation() {
     TEST_VALID_DECIMAL("0.01");
     TEST_VALID_DECIMAL("-.01");
     TEST_VALID_DECIMAL("-0.01");
+}
+
+void test_nonzero_fraction_detection() {
+    printf("\n=== Testing Non-Zero Fraction Detection ===\n");
+    
+    // Helper macro for testing non-zero fraction detection
+    #define TEST_NONZERO_FRACTION(str, expected) do { \
+        total_tests++; \
+        bool result = crypto_has_nonzero_fraction(str); \
+        if (result != expected) { \
+            printf("FAIL: Expected %s to %shave non-zero fraction, but it %s\n", \
+                   str, expected ? "" : "not ", result ? "does" : "does not"); \
+            failed_tests++; \
+        } else { \
+            passed_tests++; \
+        } \
+    } while(0)
+    
+    // Test cases with non-zero fractions
+    TEST_NONZERO_FRACTION("123.45", true);
+    TEST_NONZERO_FRACTION("0.01", true);
+    TEST_NONZERO_FRACTION("-123.45", true);
+    TEST_NONZERO_FRACTION(" 123.45 ", true);
+    TEST_NONZERO_FRACTION("+123.45", true);
+    TEST_NONZERO_FRACTION(".01", true);
+    TEST_NONZERO_FRACTION("-.01", true);
+    TEST_NONZERO_FRACTION("0.00000001", true);
+    
+    // Test cases with zero fractions
+    TEST_NONZERO_FRACTION("123.0", false);
+    TEST_NONZERO_FRACTION("123.00", false);
+    TEST_NONZERO_FRACTION("-123.0", false);
+    TEST_NONZERO_FRACTION(" 123.0 ", false);
+    TEST_NONZERO_FRACTION("+123.0", false);
+    TEST_NONZERO_FRACTION("0.0", false);
+    TEST_NONZERO_FRACTION("-0.0", false);
+    TEST_NONZERO_FRACTION("0.00000000", false);
+    
+    // Test cases with no decimal point
+    TEST_NONZERO_FRACTION("123", false);
+    TEST_NONZERO_FRACTION("-123", false);
+    TEST_NONZERO_FRACTION(" 123 ", false);
+    TEST_NONZERO_FRACTION("+123", false);
+    TEST_NONZERO_FRACTION("0", false);
+    TEST_NONZERO_FRACTION("-0", false);
 }
 
 void test_sqlite_extension() {
@@ -637,6 +689,73 @@ void test_sqlite_extension() {
         "0.50000",
         "Subtraction and scale conversion with fractional result");
 
+    // Test cases for crypto_mul
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '2', '3')",
+        "6",
+        "Basic multiplication test");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '1.5', '2')",
+        "3",
+        "Multiplication with decimal values");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '-2', '3')",
+        "-6",
+        "Multiplication with negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_mul('BTC', 'BTC', '0.5', '0.5')",
+        "0.25000000",
+        "Multiplication with fractional result");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_mul('ETH', 'GWEI', 'invalid', '2')",
+        "Invalid input handling for multiplication");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_mul('ETH', 'GWEI', '2')",
+        "Wrong number of arguments handling for multiplication");
+
+    // Test cases for crypto_div
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '2')",
+        "3",
+        "Basic division test");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '3', '2')",
+        "1.500000000",
+        "Division with decimal result");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '-6', '2')",
+        "-3",
+        "Division with negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '-2')",
+        "-3",
+        "Division by negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_div_trunc('BTC', 'BTC', '1', '3')",
+        "0.33333333",
+        "Division with repeating decimal result");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6', '0')",
+        "Division by zero handling");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', 'invalid', '2')",
+        "Invalid input handling for division");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_div_trunc('ETH', 'GWEI', '6')",
+        "Wrong number of arguments handling for division");
+
     sqlite3_close(db);
 }
 
@@ -650,6 +769,7 @@ int main() {
     test_zero_comparison();
     test_multiplication_division();
     test_decimal_validation();
+    test_nonzero_fraction_detection();
     test_sqlite_extension();
     printf("\nTest Suite Summary:\n");
     printf("Total Tests: %d\n", total_tests);

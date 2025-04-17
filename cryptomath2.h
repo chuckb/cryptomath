@@ -423,8 +423,10 @@ void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char
 char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom);
 void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
 void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
-void crypto_mul_i64(crypto_val_t* r, const crypto_val_t* a, int64_t s);
-void crypto_divt_ui64(crypto_val_t* r, const crypto_val_t* a, uint64_t s);
+void crypto_mul(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_truncate(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_floor(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_ceil(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
 int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b);
 int crypto_gt_zero(const crypto_val_t* a);
 int crypto_lt_zero(const crypto_val_t* a);
@@ -432,6 +434,16 @@ int crypto_eq_zero(const crypto_val_t* a);
 crypto_denom_t crypto_get_denom_for_symbol(crypto_type_t type, const char* symbol);
 crypto_type_t crypto_get_type_for_symbol(const char* symbol);
 bool crypto_is_valid_decimal(const char* str);
+uint8_t crypto_scale_by_precision(const char* str, mpz_t* result);
+
+/**
+ * Checks if a valid decimal string has a non-zero fractional part.
+ * A decimal point with all zeros after it is considered to have no fraction.
+ * 
+ * @param str The decimal string to check (must be a valid decimal string)
+ * @return true if the string has a non-zero fractional part, false otherwise
+ */
+bool crypto_has_nonzero_fraction(const char* str);
 
 // Implementation section
 #ifdef CRYPTOMATH2_IMPLEMENTATION
@@ -608,25 +620,36 @@ void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b) {
     mpz_sub(r->value, a->value, b->value);
 }
 
-void crypto_mul_i64(crypto_val_t* r, const crypto_val_t* a, int64_t s) {
+void crypto_mul(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
     assert(r != NULL);
     assert(a != NULL);
+    assert(b != NULL);
     assert(r->crypto_type == a->crypto_type);
-    mpz_mul_si(r->value, a->value, s);
+    mpz_mul(r->value, a->value, *b);
 }
 
-void crypto_mul_ui64(crypto_val_t* r, const crypto_val_t* a, uint64_t s) {
+void crypto_div_truncate(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
     assert(r != NULL);
     assert(a != NULL);
+    assert(b != NULL);
     assert(r->crypto_type == a->crypto_type);
-    mpz_mul_ui(r->value, a->value, s);
+    mpz_tdiv_q(r->value, a->value, *b);
 }
 
-void crypto_divt_ui64(crypto_val_t* r, const crypto_val_t* a, uint64_t s) {
+void crypto_div_floor(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
     assert(r != NULL);
     assert(a != NULL);
+    assert(b != NULL);
     assert(r->crypto_type == a->crypto_type);
-    mpz_tdiv_q_ui(r->value, a->value, s);
+    mpz_fdiv_q(r->value, a->value, *b);
+}
+
+void crypto_div_ceil(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b) {
+    assert(r != NULL);
+    assert(a != NULL);
+    assert(b != NULL);
+    assert(r->crypto_type == a->crypto_type);
+    mpz_cdiv_q(r->value, a->value, *b);
 }
 
 int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b) {
@@ -709,6 +732,85 @@ bool crypto_is_valid_decimal(const char* str) {
     }
     
     return has_digit; // Must have at least one digit
+}
+
+bool crypto_has_nonzero_fraction(const char* str) {
+    if (!str) return false;
+    
+    // Skip leading whitespace
+    while (*str == ' ' || *str == '\t' || *str == '\n' || *str == '\r') {
+        str++;
+    }
+    
+    // Skip optional sign
+    if (*str == '+' || *str == '-') {
+        str++;
+    }
+    
+    // Find the decimal point
+    const char* decimal_point = strchr(str, '.');
+    if (!decimal_point) {
+        return false; // No decimal point means no fraction
+    }
+    
+    // Check if there are any non-zero digits after the decimal point
+    decimal_point++; // Move past the decimal point
+    while (*decimal_point != '\0' && *decimal_point != ' ' && *decimal_point != '\t' && *decimal_point != '\n' && *decimal_point != '\r') {
+        if (*decimal_point != '0') {
+            return true; // Found a non-zero digit in the fraction
+        }
+        decimal_point++;
+    }
+    
+    return false; // All digits after decimal point were zero
+}
+
+// Take an assumed valid decimal string, determine the precision past the decimal point,
+// multiple the whole number by 10^precision, add the fraction to the whole number,
+// and return the precision. The result will be passed in as a pointer to mpz_t.
+uint8_t crypto_scale_by_precision(const char* str, mpz_t* result) {
+    assert(str != NULL);
+    assert(result != NULL);
+
+    // Get the whole number part
+    mpz_set_str(*result, str, 10);
+
+    // Find the decimal point
+    const char* decimal_point = strchr(str, '.');
+    if (!decimal_point) {
+        return 0; // No decimal point means no precision
+    }
+
+    // Get the precision
+    uint8_t precision = 0;
+    while (decimal_point[precision + 1] != '\0') {
+        precision++;
+    }
+
+    // Get the fraction part into a mpz_t
+    mpz_t fraction;
+    mpz_init(fraction);
+    mpz_set_str(fraction, decimal_point + 1, 10);
+
+    // Only scale the whole number if the fraction is not zero
+    if (mpz_cmp_ui(fraction, 0) != 0) {
+        mpz_t scale;
+        mpz_init(scale);
+        mpz_ui_pow_ui(scale, 10, precision);
+        // Scale the whole number by the precision; assume the precision can be large
+        mpz_mul(*result, *result, scale);
+        // Add the fraction to the whole number
+        mpz_add(*result, *result, fraction);
+        // Clear the fraction
+        mpz_clear(fraction);
+        mpz_clear(scale);
+        // Return the precision
+        return precision;
+    } else {
+        // Clear the fraction
+        mpz_clear(fraction);
+        return 0;
+    }
 }
 
 // Get the type for a given symbol.
