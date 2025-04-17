@@ -1,51 +1,43 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -g -O2 -I/usr/local/opt/sqlite3/include
-DEBUG_CFLAGS = -Wall -Wextra -ggdb -O0 -MMD -MP -I/usr/local/opt/sqlite3/include
-# Works on macOS - Homebrew cask
-# Note that native sqlite3 on macOS does not have the .load function enabled
-LDFLAGS = -L/usr/local/opt/sqlite3/lib -lgmp -lsqlite3
-# Works on Linux
-#LDFLAGS = -I/usr/include/sqlite3 -L/usr/lib/x86_64-linux-gnu -lgmp
+.DEFAULT_GOAL := all
 
-# Define the source files
-SRCS = test_cryptomath.c crypto_get_types.c crypto_get_denoms.c
-OBJS = $(SRCS:.c=.o)
-DEPS = $(SRCS:.c=.d)
-DEBUG_OBJS = $(SRCS:.c=.debug.o)
+# Include common definitions
+include include.mk
 
-# Define the target executable
-TARGET = test_cryptomath
-SQLITE_EXT = crypto_decimal_extension.dylib
+# Include component-specific makefiles
+include lib.mk
+include sqlite.mk
+
+# Test executable settings
+TEST_SRCS = $(TEST_DIR)/test_cryptomath.c
+TEST_OBJS = $(TEST_SRCS:.c=.o)
+TEST_DEPS = $(TEST_SRCS:.c=.d)
+TEST_TARGET = test_cryptomath
+
+# Header dependencies
+TEST_HEADERS = $(LIB_HEADERS) $(SQLITE_HEADERS)
 
 # Default target
-all: $(TARGET) $(SQLITE_EXT)
+all: $(TEST_TARGET) $(SQLITE_EXT)
 
+# Debug build
 debug: CFLAGS = $(DEBUG_CFLAGS)
-debug: $(TARGET)
+debug: $(TEST_TARGET) $(SQLITE_EXT)
 
+# Build test executable
+$(TEST_TARGET): $(TEST_OBJS) $(SQLITE_EXT)
+	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(TEST_OBJS) $(LDFLAGS)
 
-# Build the SQLite extension
-$(SQLITE_EXT): crypto_decimal_extension.c cryptomath.h crypto_get_types.o crypto_get_denoms.o
-#	$(CC) -fPIC -shared $(CFLAGS) -o $@ $< $(LDFLAGS) -lsqlite3 -lm
-	$(CC) -fPIC -dynamiclib $(CFLAGS) -o $@ crypto_decimal_extension.c crypto_get_types.o crypto_get_denoms.o $(LDFLAGS)
+# Compile test files
+$(TEST_OBJS): %.o: %.c $(TEST_HEADERS)
+	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
 
-# Build the test executable
-$(TARGET): $(OBJS) $(SQLITE_EXT)
-	$(CC) $(CFLAGS) -o $@ $^ $(LDFLAGS)
-
-# Compile source files
-%.o: %.c cryptomath.h
-	$(CC) $(CFLAGS) -c $<
-
-# Clean up
-clean:
-	rm -rf $(OBJS) $(TARGET) $(DEPS) $(DEBUG_OBJS) $(SQLITE_EXT) $(SQLITE_EXT).dSYM crypto_decimal_extension.d
-
-# Include auto-generated dependencies, but do not error if they don't exist yet:
--include $(DEPS)
+# Clean everything
+clean: clean-lib clean-sqlite
+	rm -f $(TEST_OBJS) $(TEST_DEPS) $(TEST_TARGET)
 
 # Run tests
-test: $(TARGET)
-	./$(TARGET)
+test: $(TEST_TARGET)
+	./$(TEST_TARGET)
 
-.PHONY: all clean test debug
+# Include auto-generated dependencies
+-include $(TEST_DEPS) $(SQLITE_DEPS)
