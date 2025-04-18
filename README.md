@@ -1,6 +1,8 @@
 # Cryptomath
 
-A C library for handling cryptocurrency amounts with arbitrary precision, supporting multiple cryptocurrencies and their various denominations.
+A C library for handling cryptocurrency amounts with arbitrary precision, supporting multiple cryptocurrencies and their various denominations. Available in two forms:
+1. Header-only C library for direct integration
+2. SQLite extension for database operations
 
 ## Features
 
@@ -18,6 +20,10 @@ A C library for handling cryptocurrency amounts with arbitrary precision, suppor
   - Polygon (MATIC, WEI)
   - USD Coin (USDC, μUSDC)
   - Tether (USDT, μUSDT)
+  - Flare (FLR, GWEI, WEI)
+  - Songbird (SGB, GWEI, WEI)
+  - Wrapped Flare (FLR, GWEI, WEI)
+  - Wrapped Songbird (FLR, GWEI, WEI)
 - Type-safe value setting and conversion
 - Arithmetic operations between different units
 - Precise decimal representation
@@ -28,46 +34,54 @@ A C library for handling cryptocurrency amounts with arbitrary precision, suppor
 - C99 or later
 - GMP library (libgmp)
 - Make (for building)
+- SQLite3 (for SQLite extension)
 
 ## Installation
 
-1. Install GMP:
-   ```bash
-   # macOS
-   brew install gmp
-   
-   # Ubuntu/Debian
-   sudo apt-get install libgmp-dev
-   ```
+### Installing Dependencies
 
-2. Build the library and tests:
-   ```bash
-   make
-   ```
+```bash
+# macOS
+brew install gmp sqlite3
 
-3. Run the tests:
-   ```bash
-   make test
-   ```
+# Ubuntu/Debian
+sudo apt-get install libgmp-dev libsqlite3-dev
+```
 
-4. For debugging:
-   ```bash
-   # Build with debug symbols and no optimization
-   make debug
-   
-   # Run tests with debug build
-   make test
-   ```
+### Building
 
-   The debug build includes:
-   - Debug symbols (-ggdb)
-   - No optimization (-O0)
-   - Additional warnings (-Wall -Wextra)
-   - Automatic dependency generation (-MMD -MP)
+The project has two main components that can be built separately:
 
-## API
+1. Header-only library:
+```bash
+# Build just the library
+make lib
 
-### Types
+# Build and run library tests
+make test-lib
+```
+
+2. SQLite extension:
+```bash
+# Build the SQLite extension
+make sqlite
+
+# Build and run SQLite extension tests
+make test-sqlite
+```
+
+For debugging:
+```bash
+# Build with debug symbols and no optimization
+make debug
+
+# Run all tests with debug build
+make test
+```
+
+## Header-only Library Usage
+
+### API
 
 ```c
 // Supported cryptocurrencies
@@ -84,6 +98,10 @@ typedef enum {
     CRYPTO_POLYGON,
     CRYPTO_USDC,
     CRYPTO_USDT,
+    CRYPTO_FLARE,
+    CRYPTO_SONGBIRD,
+    CRYPTO_WFLR,
+    CRYPTO_WSGB,
     CRYPTO_COUNT
 } crypto_type_t;
 
@@ -117,8 +135,10 @@ char* crypto_to_decimal_str(crypto_val_t* val, crypto_def_t denom);
 // Arithmetic operations
 void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
 void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
-void crypto_mul_i64(crypto_val_t* r, const crypto_val_t* a, int64_t s);
-void crypto_divt_ui64(crypto_val_t* r, const crypto_val_t* a, uint64_t s);
+void crypto_mul(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_truncate(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_floor(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
+void crypto_div_ceil(crypto_val_t* r, const crypto_val_t* a, const mpz_t *b);
 
 // Comparison operations
 int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b);
@@ -130,10 +150,11 @@ int crypto_eq_zero(const crypto_val_t* a);
 void crypto_clear(crypto_val_t* val);
 ```
 
-## Usage Example
+### Example Usage
 
 ```c
-#include "cryptomath2.h"
+#define CRYPTOMATH_IMPLEMENTATION
+#include "cryptomath.h"
 
 int main() {
     // Bitcoin example
@@ -190,6 +211,71 @@ int main() {
 }
 ```
 
+## SQLite Extension Usage
+
+### Available Functions
+
+The SQLite extension provides the following functions:
+
+```sql
+-- Scale a given crypto amount
+crypto_scale(crypto, from_denom, to_denom, operand) -> TEXT
+
+-- Arithmetic operations
+crypto_add(crypto, denomination, operand1, operand2) -> TEXT
+crypto_sub(crypto, denomination, operand1, operand2) -> TEXT
+crypto_mul(crypto, denomination, operand1, operand2) -> TEXT
+crypto_div_trunc(crypto, denomination, operand1, operand2) -> TEXT
+crypto_div_floor(crypto, denomination, operand1, operand2) -> TEXT
+crypto_div_ceil(crypto, denomination, operand1, operand2) -> TEXT
+
+-- Aggregate operations
+crypto_sum(crypto, operand_denomination, final_denomination, operand) -> TEXT
+
+-- Metadata as virtual tables
+crypto_types()
+crypto_denoms()
+```
+
+### Example Usage
+
+```sql
+-- Create a table with decimal columns stored as TEXT
+CREATE TABLE transactions (
+    id INTEGER PRIMARY KEY,
+    amount TEXT,
+    fee TEXT
+);
+
+-- Insert BITCOIN values as TEXT
+INSERT INTO transactions (amount, fee) VALUES
+    ('1.23456789', '0.0001');
+INSERT INTO transactions (amount, fee) VALUES
+    ('9.87654321', '0.0010');
+
+-- Add BITCOIN together in BTC units and scale to SATS
+SELECT crypto_scale('BTC', 'BTC', 'SAT', crypto_add('BTC', 'BTC', amount, fee)) as total FROM transactions;
+
+-- Sum BITCOIN across rows and scale output to SATS
+SELECT crypto_sum('BTC', 'BTC', 'SAT', amount) FROM transactions;
+```
+
+### Loading the Extension
+
+```bash
+# Load extension in SQLite CLI
+sqlite3
+.load ./build/crypto_decimal_extension.dylib
+
+# Or in your application
+sqlite3_enable_load_extension(db, 1);
+sqlite3_load_extension(db, "./build/crypto_decimal_extension.dylib", 0, NULL);
+```
+Note that you must have a sqlite version installed with extension support enabled for CLI use.
+Mac OS does not come with a native build that supports extensions. The homebrew version
+DOES have this enabled. You will have to point header directories at that new location. Also note
+that sqlite is a cask only install, so you will have to alter your path to pick up the fresher version.
+
 ## Unit Support
 
 ### Bitcoin Units
@@ -208,7 +294,10 @@ int main() {
 | Wei       | WEI    | 0        | 1000000000000000000      |
 
 ### Other Supported Cryptocurrencies
-The library supports many other cryptocurrencies with their respective denominations. Each cryptocurrency has a base unit and a smallest unit (usually with 0 decimal places).
+The library supports many other cryptocurrencies with their respective denominations. Each cryptocurrency has a base unit and a smallest unit (with 0 decimal places).
+
+To add additional currency types and denominations, see the cryptomath.h file and the typedefs
+and static arrays at the top of the file.
 
 ## Testing
 
@@ -222,9 +311,24 @@ The test suite verifies:
 
 Run tests with:
 ```bash
+# Test header-only library
+make test-lib
+
+# Test SQLite extension
+make test-sqlite
+
+# Test everything
 make test
 ```
 
 ## License
 
-See the LICENSE file for details.
+See the LICENSE.md file for details.
+
+## Copyright
+
+Copyright (c) 2025 Charles Benedict, Jr.
+
+This copyright notice must be retained in its entirety.
+The LICENSE.md file must be retained and must be included with any distribution of this file.
+

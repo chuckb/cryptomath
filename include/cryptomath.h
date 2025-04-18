@@ -102,6 +102,7 @@ typedef enum {
     WSGB_DENOM_WSGB,
     WSGB_DENOM_GWEI,
     WSGB_DENOM_WEI,
+    // Add more denominations here as needed
     DENOM_COUNT  // Keep this as the last entry
 } crypto_denom_t;
 
@@ -429,6 +430,7 @@ static const crypto_denom_def_t crypto_denoms[] = {
     }
 };
 
+// Public API
 int crypto_is_valid_type(crypto_type_t type);
 int crypto_is_valid_denom(crypto_denom_t denom);
 void crypto_init(crypto_val_t* val, crypto_type_t type);
@@ -451,12 +453,12 @@ bool crypto_is_valid_decimal(const char* str);
 uint8_t crypto_scale_by_precision(const char* str, mpz_t* result);
 bool crypto_has_nonzero_fraction(const char* str);
 
-// Implementation section
+// Begin implementation section
 #ifdef CRYPTOMATH_IMPLEMENTATION
 
-// Note: We assume that decimals will not exceed 18 places.
+// Note: I assume that decimals will not exceed 18 places.
 // No token I can find has more than 18 decimal places.
-// If you need more, you can change the type of denominator to a mpz_t.
+// If you need more, you can change the return to a mpz_t.
 uint64_t power(uint64_t base, uint64_t exp)
 {
     uint64_t result = 1;
@@ -557,6 +559,11 @@ void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char
     mpz_mul_si(val->value, val->value, sign);
 }
 
+// Convert a crypto_val_t to a decimal string.
+// Note that the decimal string will be in the smallest unit of the crypto type.
+// For example, if the crypto_val_t is 123456789 and the denom is BTC_DENOM_BITCOIN,
+// the decimal string will be "1.23456789".
+// Note that the caller is responsible for freeing the returned string.
 char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom) {
     assert(val != NULL);
     assert(crypto_is_valid_denom(denom));
