@@ -44,12 +44,18 @@ $(SQLITE_TEST_OBJS): $(BUILD_DIR)/%.o: $(TEST_DIR)/%.c $(SQLITE_HEADERS) | $(BUI
 clean: clean-lib clean-sqlite
 	rm -f $(LIB_TEST_OBJS) $(LIB_TEST_DEPS) $(LIB_TEST_TARGET)
 	rm -f $(SQLITE_TEST_OBJS) $(SQLITE_TEST_DEPS) $(SQLITE_TEST_TARGET)
-	rm -rf $(BUILD_DIR)
+	rm -rf $(BUILD_DIR) $(DIST_DIR)
 
 # Run tests
 test: $(LIB_TEST_TARGET) $(SQLITE_TEST_TARGET) $(SQLITE_EXT)
 	./$(LIB_TEST_TARGET)
 	./$(SQLITE_TEST_TARGET)
+
+# Create distribution package
+dist: dist-lib dist-sqlite
+	cp README.md LICENSE.md $(DIST_DIR)/$(DIST_PACKAGE)/
+	tar -czf $(DIST_DIR)/$(DIST_TARBALL) -C $(DIST_DIR) $(DIST_PACKAGE)
+	@echo "Created distribution package: $(DIST_DIR)/$(DIST_TARBALL)"
 
 # Include auto-generated dependencies
 -include $(LIB_TEST_DEPS) $(SQLITE_TEST_DEPS)
