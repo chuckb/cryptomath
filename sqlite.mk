@@ -1,5 +1,5 @@
 # SQLite extension specific settings
-SQLITE_EXT = $(BUILD_DIR)/crypto_decimal_extension.dylib
+SQLITE_EXT = $(BUILD_DIR)/crypto_decimal_extension.$(EXTENSION_SUFFIX)
 SQLITE_SRCS = $(SRC_DIR)/crypto_decimal_extension.c $(SRC_DIR)/crypto_get_types.c $(SRC_DIR)/crypto_get_denoms.c
 SQLITE_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(SQLITE_SRCS:.c=.o)))
 SQLITE_DEPS = $(SQLITE_OBJS:.o=.d)
