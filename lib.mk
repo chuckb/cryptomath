@@ -1,5 +1,5 @@
 # Header-only library files
-LIB_HEADERS = 
+LIB_HEADERS = $(INCLUDE_DIR)/cryptomath.h
 
 .PHONY: clean-lib
 

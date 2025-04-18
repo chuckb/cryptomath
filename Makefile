@@ -8,36 +8,46 @@ include lib.mk
 include sqlite.mk
 
 # Test executable settings
-TEST_SRCS = $(TEST_DIR)/test_cryptomath.c
-TEST_OBJS = $(TEST_SRCS:.c=.o)
-TEST_DEPS = $(TEST_SRCS:.c=.d)
-TEST_TARGET = test_cryptomath
+LIB_TEST_SRCS = $(TEST_DIR)/test_lib.c
+LIB_TEST_TARGET = test_lib
+LIB_TEST_OBJS = $(LIB_TEST_SRCS:.c=.o)
+LIB_TEST_DEPS = $(LIB_TEST_SRCS:.c=.d)
+SQLITE_TEST_SRCS = $(TEST_DIR)/test_sqlite.c
+SQLITE_TEST_TARGET = test_sqlite
+SQLITE_TEST_OBJS = $(SQLITE_TEST_SRCS:.c=.o)
+SQLITE_TEST_DEPS = $(SQLITE_TEST_SRCS:.c=.d)
 
-# Header dependencies
-TEST_HEADERS = $(LIB_HEADERS) $(SQLITE_HEADERS)
 
 # Default target
-all: $(TEST_TARGET) $(SQLITE_EXT)
+all: $(LIB_TEST_TARGET) $(SQLITE_TEST_TARGET) $(SQLITE_EXT)
 
 # Debug build
 debug: CFLAGS = $(DEBUG_CFLAGS)
-debug: $(TEST_TARGET) $(SQLITE_EXT)
+debug: $(LIB_TEST_TARGET) $(SQLITE_TEST_TARGET) $(SQLITE_EXT)
 
-# Build test executable
-$(TEST_TARGET): $(TEST_OBJS) $(SQLITE_EXT)
-	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(TEST_OBJS) $(LDFLAGS)
+# Build library test executable
+$(LIB_TEST_TARGET): $(LIB_TEST_OBJS) $(LIB_HEADERS)
+	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(LIB_TEST_OBJS) $(LDFLAGS)
+
+# Build SQLite test executable
+$(SQLITE_TEST_TARGET): $(SQLITE_TEST_OBJS) $(SQLITE_HEADERS)
+	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(SQLITE_TEST_OBJS) $(LDFLAGS)
 
 # Compile test files
-$(TEST_OBJS): %.o: %.c $(TEST_HEADERS)
+$(LIB_TEST_OBJS): %.o: %.c $(LIB_HEADERS)
+	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
+$(SQLITE_TEST_OBJS): %.o: %.c $(SQLITE_HEADERS)
 	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
 
 # Clean everything
 clean: clean-lib clean-sqlite
-	rm -f $(TEST_OBJS) $(TEST_DEPS) $(TEST_TARGET)
+	rm -f $(LIB_TEST_OBJS) $(LIB_TEST_DEPS) $(LIB_TEST_TARGET)
+	rm -f $(SQLITE_TEST_OBJS) $(SQLITE_TEST_DEPS) $(SQLITE_TEST_TARGET)
 
 # Run tests
-test: $(TEST_TARGET)
-	./$(TEST_TARGET)
+test: $(LIB_TEST_TARGET) $(SQLITE_TEST_TARGET) $(SQLITE_EXT)
+	./$(LIB_TEST_TARGET)
+	./$(SQLITE_TEST_TARGET)
 
 # Include auto-generated dependencies
--include $(TEST_DEPS) $(SQLITE_DEPS)
+-include $(LIB_TEST_DEPS) $(SQLITE_TEST_DEPS)

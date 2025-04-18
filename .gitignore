@@ -1,5 +1,5 @@
 *.o
 *.d
-test_cryptomath
-test_cryptomath2
+test_lib
+test_sqlite
 crypto_decimal_extension.dylib*
