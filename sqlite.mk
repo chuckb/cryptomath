@@ -1,18 +1,18 @@
 # SQLite extension specific settings
-SQLITE_EXT = crypto_decimal_extension.dylib
+SQLITE_EXT = $(BUILD_DIR)/crypto_decimal_extension.dylib
 SQLITE_SRCS = $(SRC_DIR)/crypto_decimal_extension.c $(SRC_DIR)/crypto_get_types.c $(SRC_DIR)/crypto_get_denoms.c
-SQLITE_OBJS = $(SQLITE_SRCS:.c=.o)
-SQLITE_DEPS = $(SQLITE_SRCS:.c=.d)
+SQLITE_OBJS = $(addprefix $(BUILD_DIR)/, $(notdir $(SQLITE_SRCS:.c=.o)))
+SQLITE_DEPS = $(SQLITE_OBJS:.o=.d)
 
 # Header dependencies
 SQLITE_HEADERS = $(INCLUDE_DIR)/cryptomath.h $(INCLUDE_DIR)/cypto_get_types.h $(INCLUDE_DIR)/cypto_get_denoms.h
 
 # Build the SQLite extension
-$(SQLITE_EXT): $(SQLITE_OBJS) $(SQLITE_HEADERS)
+$(SQLITE_EXT): $(SQLITE_OBJS) $(SQLITE_HEADERS) | $(BUILD_DIR)
 	$(CC) -fPIC -dynamiclib $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(SQLITE_OBJS) $(LDFLAGS)
 
 # Compile SQLite extension objects
-$(SQLITE_OBJS): %.o: %.c $(SQLITE_HEADERS)
+$(SQLITE_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(SQLITE_HEADERS) | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
 
 # Clean SQLite extension
