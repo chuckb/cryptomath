@@ -197,7 +197,11 @@ void test_sqlite_extension() {
 
     // Load the extension
     sqlite3_enable_load_extension(db, 1);
-    rc = sqlite3_load_extension(db, "./build/crypto_decimal_extension.dylib", 0, &err_msg);
+    #if defined(__APPLE__) && defined(__MACH__)
+        rc = sqlite3_load_extension(db, "./build/crypto_decimal_extension.dylib", 0, &err_msg);
+    #elif defined(__linux__)
+        rc = sqlite3_load_extension(db, "./build/crypto_decimal_extension.so", 0, &err_msg);
+    #endif
     if (rc != SQLITE_OK) {
         printf("Cannot load extension: %s\n", err_msg);
         sqlite3_free(err_msg);

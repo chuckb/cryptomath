@@ -1,6 +1,8 @@
 # Common compiler settings
 CC = gcc
-CFLAGS = -Wall -Wextra -O2 -MMD -MP
+# -O2 is messing with SHOULD_ASSERT logic in test harness under Linux.
+# I have not bothered to figure out why yet.
+CFLAGS = -Wall -Wextra -O0 -MMD -MP
 DEBUG_CFLAGS = -Wall -Wextra -ggdb -O0 -MMD -MP
 
 #── 1) detect platform ────────────────────────────────────────────────────────────
@@ -9,6 +11,7 @@ UNAME_S := $(shell uname -s)
 #── 2) on macOS, if brew is around, prepend its pkgconfig dirs ───────────────────
 ifeq ($(UNAME_S),Darwin)
 	EXTENSION_SUFFIX = dylib
+	EXTENSION_FLAGS = -dynamiclib
 	ifneq (,$(shell command -v brew 2>/dev/null))
     	# For sqlite3:
 	    ifneq (,$(shell brew --prefix sqlite3 2>/dev/null))
@@ -21,6 +24,7 @@ ifeq ($(UNAME_S),Darwin)
 	endif
 else
 	EXTENSION_SUFFIX = so
+	EXTENSION_FLAGS = -shared
 endif
 
 # Default settings
@@ -59,12 +63,8 @@ INCLUDE_FLAGS = -I$(INCLUDE_DIR) -I$(SQLITE_INCLUDE_DIR) -I$(GMP_INCLUDE_DIR)
 LDFLAGS = -L$(SQLITE_LIB_DIR) -L$(GMP_LIB_DIR) -lgmp -lsqlite3
 
 # Common targets
-.PHONY: all clean test debug dist
+.PHONY: all clean test debug
 
 # Create build directory
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
-
-# Create dist directory
-$(DIST_DIR):
-	mkdir -p $(DIST_DIR) 

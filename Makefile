@@ -7,6 +7,12 @@ include include.mk
 include lib.mk
 include sqlite.mk
 
+# Include distro-specific makefiles
+include distlinux.mk
+
+# Declare all phony targets in one place
+.PHONY: all clean test debug clean-lib clean-sqlite docker-image-linux
+
 # Test executable settings
 LIB_TEST_SRCS = $(TEST_DIR)/test_lib.c
 LIB_TEST_TARGET = $(BUILD_DIR)/test_lib

@@ -1,0 +1,26 @@
+# Accept a base image (e.g. ubuntu:24.04, debian:bookworm, alpine:3.18, fedora:40, etc.)
+ARG BASE_IMAGE
+FROM ${BASE_IMAGE}
+
+# List of packages to install (pass in via --build-arg DEPS)
+# e.g. Debian/Ubuntu: "build-essential autoconf libssl-dev"
+#      Alpine:       "build-base autoconf openssl-dev"
+#      Fedora:       "make automake gcc gcc-c++ openssl-devel"
+ARG DEPS
+
+# Detect distro and install the DEPS appropriately
+RUN if [ -f /etc/debian_version ]; then \
+      apt-get update && \
+      apt-get install -y $DEPS && \
+      rm -rf /var/lib/apt/lists/*; \
+    elif [ -f /etc/alpine-release ]; then \
+      apk add --no-cache $DEPS; \
+    elif [ -f /etc/fedora-release ]; then \
+      dnf install -y $DEPS; \
+    else \
+      echo "Unsupported base image: ${BASE_IMAGE}" >&2; \
+      exit 1; \
+    fi
+
+WORKDIR /src
+ENTRYPOINT ["make", "test", "dist"]

@@ -12,19 +12,19 @@ DIST_SQLITE_EXT = $(DIST_DIR)/$(DIST_PACKAGE)/lib/$(notdir $(SQLITE_EXT))
 
 # Build the SQLite extension
 $(SQLITE_EXT): $(SQLITE_OBJS) $(SQLITE_HEADERS) | $(BUILD_DIR)
-	$(CC) -fPIC -dynamiclib $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(SQLITE_OBJS) $(LDFLAGS)
+	$(CC) -fPIC $(EXTENSION_FLAGS) $(CFLAGS) $(INCLUDE_FLAGS) -o $@ $(SQLITE_OBJS) $(LDFLAGS)
 
 # Compile SQLite extension objects
 $(SQLITE_OBJS): $(BUILD_DIR)/%.o: $(SRC_DIR)/%.c $(SQLITE_HEADERS) | $(BUILD_DIR)
-	$(CC) $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
+	$(CC) -fPIC $(CFLAGS) $(INCLUDE_FLAGS) -c $< -o $@
 
 # Clean SQLite extension
 clean-sqlite:
 	rm -f $(SQLITE_EXT) $(SQLITE_EXT).dSYM $(SQLITE_OBJS) $(SQLITE_DEPS)
 
 # Prepare SQLite extension for distribution
-dist-sqlite: $(DIST_DIR) $(SQLITE_EXT) $(SQLITE_HEADERS)
+dist-sqlite: $(SQLITE_EXT) $(SQLITE_HEADERS)
 	mkdir -p $(DIST_DIR)/$(DIST_PACKAGE)/lib
 	cp $(SQLITE_EXT) $(DIST_DIR)/$(DIST_PACKAGE)/lib/
 
-.PHONY: clean-sqlite dist-sqlite 
+.PHONY: clean-sqlite 

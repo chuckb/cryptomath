@@ -596,15 +596,17 @@ char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom) {
     }
     // If the fraction part is not zero, add the decimal point and pad the fraction part with leading zeros if needed
     if (mpz_cmp_ui(fraction_part, 0) != 0) {
+        // Reallocate memory for the formatted string to include the decimal point and 
+        // enough zeros to pad the fraction part to the denom
+        formatted_str = realloc(formatted_str, strlen(formatted_str) + crypto_denoms[denom].decimals + 2);
+        // Add the decimal point
         strcat(formatted_str, ".");
-        // Pad the fraction part with leading zeros if not enough digits
-        if (strlen(fraction_str) < crypto_denoms[denom].decimals) {
-            formatted_str = realloc(formatted_str, strlen(formatted_str) + crypto_denoms[denom].decimals - strlen(fraction_str) + 1);
-            memset(formatted_str + strlen(formatted_str), '0', crypto_denoms[denom].decimals - strlen(fraction_str));
-            strcat(formatted_str, fraction_str);
-        } else {
-            strcat(formatted_str, fraction_str);
+        // Pad with leading zeros if needed using strcat in a loop
+        for (size_t i = 0; i < crypto_denoms[denom].decimals - strlen(fraction_str); i++) {
+            strcat(formatted_str, "0");
         }
+        // Add the fraction part
+        strcat(formatted_str, fraction_str);
     }
 
     // Free the temporary strings

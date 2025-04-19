@@ -321,6 +321,18 @@ make test-sqlite
 make test
 ```
 
+## Distribution
+
+```bash
+# Tarball for Mac OS
+make dist
+
+# Tarball for Ubuntu 24.04
+make dist-linux LINUX_DISTRO=ubuntu:24.04 LINUX_DEPS="build-essential autoconf libssl-dev libsqlite3-dev libgmp-dev"
+```
+
+A generic dockerfile exists that should be able to build for many Linux distros.
+
 ## License
 
 See the LICENSE.md file for details.

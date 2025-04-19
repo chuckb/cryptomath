@@ -1,5 +1,4 @@
-*.o
-*.d
+dist
+build
 test_lib
 test_sqlite
-crypto_decimal_extension.dylib*
