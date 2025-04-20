@@ -34,6 +34,7 @@ GMP_INCLUDE_DIR ?= /usr/include
 GMP_LIB_DIR ?= /usr/lib
 
 #── 3) set up pkg-config ───────────────────────────────────────────────────────────
+# Ick...this could be a lot more elegant.
 ifneq (,$(shell command -v pkg-config 2>/dev/null))
 	ifeq ($(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --atleast-version=3.44.0 sqlite3 && echo ok),ok)
 		SQLITE_INCLUDE_DIR := $(shell PKG_CONFIG_PATH=$(PKG_CONFIG_PATH) pkg-config --variable=includedir sqlite3)

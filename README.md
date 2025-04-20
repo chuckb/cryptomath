@@ -229,10 +229,17 @@ crypto_div_trunc(crypto, denomination, operand1, operand2) -> TEXT
 crypto_div_floor(crypto, denomination, operand1, operand2) -> TEXT
 crypto_div_ceil(crypto, denomination, operand1, operand2) -> TEXT
 
+-- Comparison operations
+crypto_cmp(crypto, denomination, operand1, operand2) -> INTEGER
+-- Returns:
+--   0 if operand1 == operand2
+--  -1 if operand1 < operand2
+--   1 if operand1 > operand2
+
 -- Aggregate operations
 crypto_sum(crypto, operand_denomination, final_denomination, operand) -> TEXT
 
--- Metadata as virtual tables
+-- Metadata as virtual tables; list supported crypto types and denominations
 crypto_types()
 crypto_denoms()
 ```
@@ -258,6 +265,19 @@ SELECT crypto_scale('BTC', 'BTC', 'SAT', crypto_add('BTC', 'BTC', amount, fee)) 
 
 -- Sum BITCOIN across rows and scale output to SATS
 SELECT crypto_sum('BTC', 'BTC', 'SAT', amount) FROM transactions;
+
+-- Compare cryptocurrency amounts
+SELECT 
+    CASE crypto_cmp('BTC', 'BTC', amount, '1.0')
+        WHEN 1 THEN 'Greater than 1 BTC'
+        WHEN 0 THEN 'Equal to 1 BTC'
+        WHEN -1 THEN 'Less than 1 BTC'
+    END as comparison
+FROM transactions;
+
+-- Find transactions with fees greater than 0.0005 BTC
+SELECT * FROM transactions 
+WHERE crypto_cmp('BTC', 'BTC', fee, '0.0005') > 0;
 ```
 
 ### Loading the Extension

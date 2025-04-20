@@ -349,6 +349,53 @@ void test_sqlite_extension() {
         "SELECT crypto_div_trunc('ETH', 'GWEI', '6')",
         "Wrong number of arguments handling for division");
 
+    // Test cases for crypto_cmp
+    verify_sql_result(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '1.5', '1.0')",
+        "1",
+        "Basic comparison test (greater than)");
+
+    verify_sql_result(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '1.0', '1.0')",
+        "0",
+        "Basic comparison test (equal)");
+
+    verify_sql_result(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '0.5', '1.0')",
+        "-1",
+        "Basic comparison test (less than)");
+
+    verify_sql_result(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '-1.0', '1.0')",
+        "-1",
+        "Comparison with negative numbers");
+
+    verify_sql_result(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '1.23456789', '1.23456788')",
+        "1",
+        "Comparison with high precision values");
+
+    verify_sql_result(db,
+        "SELECT crypto_cmp('BTC', 'SAT', '0.00000001', '0.00000001')",
+        "0",
+        "Comparison with small values");
+
+    // Will truncate to 0.00000001
+    // The question is should it just do this silently?
+    // Or should it return an error?
+    verify_sql_result(db,
+        "SELECT crypto_cmp('BTC', 'SAT', '0.000000012', '0.000000013')",
+        "0",
+        "Comparison with small values with truncation");
+
+    verify_sql_runtime_error(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', 'invalid', '1.0')",
+        "Invalid input handling for comparison");
+
+    verify_sql_parse_error(db,
+        "SELECT crypto_cmp('ETH', 'GWEI', '1.0')",
+        "Wrong number of arguments handling for comparison");
+
     sqlite3_close(db);
 }
 

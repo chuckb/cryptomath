@@ -59,11 +59,11 @@ static void result_error_fmt(
   char buf[256];           /* adjust size as needed */
   va_list ap;
   va_start(ap, fmt);
-  /* SQLite’s own safe snprintf: will NUL-terminate */
+  /* SQLite's own safe snprintf: will NUL-terminate */
   sqlite3_vsnprintf(sizeof(buf), buf, fmt, ap);
   va_end(ap);
 
-  /* Pass -1 so SQLite copies the entire NUL‑terminated buffer */
+  /* Pass -1 so SQLite copies the entire NUL-terminated buffer */
   sqlite3_result_error(ctx, buf, -1);
 }
 
@@ -468,6 +468,83 @@ static void crypto_sum_final(sqlite3_context *context) {
 }
 
 //-----------------------------
+// crypto_cmp_sqlite
+//
+// A SQLite function that compares two crypto-decimal strings.
+// Returns 0 if equal, -1 if first < second, 1 if first > second
+static void crypto_cmp_sqlite(
+    sqlite3_context *context,
+    int argc,
+    sqlite3_value **argv
+){
+    // Expect 4 args
+    if (argc != 4) {
+        result_error_fmt(context, "crypto_cmp requires four arguments (crypto, denomination, operand1, operand2)");
+        return;
+    }
+
+    // Get text from args
+    const unsigned char *crypto_type_str = sqlite3_value_text(argv[0]);
+    const unsigned char *denom_str = sqlite3_value_text(argv[1]);
+    const unsigned char *op_1_str = sqlite3_value_text(argv[2]);
+    const unsigned char *op_2_str = sqlite3_value_text(argv[3]);
+    if (!crypto_type_str || !denom_str || !op_1_str || !op_2_str) {
+        result_error_fmt(context, "crypto_cmp: Invalid arguments");
+        return;
+    }
+
+    // Get crypto_type for the first arg
+    crypto_type_t crypto_type = crypto_get_type_for_symbol((const char*)crypto_type_str);
+    if (crypto_type == CRYPTO_COUNT) {
+        result_error_fmt(context, "crypto_cmp: Invalid crypto type");
+        return;
+    }
+
+    // Get the denom for the first arg
+    crypto_denom_t denom = crypto_get_denom_for_symbol(crypto_type, (const char*)denom_str);
+    if (denom == DENOM_COUNT) {
+        result_error_fmt(context, "crypto_cmp: Invalid denomination");
+        return;
+    }
+
+    // Parse both operands into crypto_val_t
+    crypto_val_t op_1, op_2;
+    crypto_init(&op_1, crypto_type);
+    crypto_init(&op_2, crypto_type);
+
+    // Validate the first operand
+    if (!crypto_is_valid_decimal((const char*)op_1_str)) {
+        crypto_clear(&op_1); 
+        crypto_clear(&op_2);
+        result_error_fmt(context, "crypto_cmp: Invalid decimal format for first operand");
+        return;
+    }
+    // Parse the first operand into crypto_val_t
+    crypto_set_from_decimal(&op_1, denom, (const char*)op_1_str);
+
+    // Validate the second operand
+    if (!crypto_is_valid_decimal((const char*)op_2_str)) {
+        crypto_clear(&op_1); 
+        crypto_clear(&op_2);
+        result_error_fmt(context, "crypto_cmp: Invalid decimal format for second operand");
+        return;
+    }
+
+    // Parse the second operand into crypto_val_t
+    crypto_set_from_decimal(&op_2, denom, (const char*)op_2_str);
+
+    // Perform the comparison
+    int cmp_result = crypto_cmp(&op_1, &op_2);
+
+    // Clean up
+    crypto_clear(&op_1);
+    crypto_clear(&op_2);
+
+    // Return the comparison result as an integer
+    sqlite3_result_int(context, cmp_result);
+}
+
+//-----------------------------
 // Entry point for the extension
 #ifdef _WIN32
 __declspec(dllexport)
@@ -579,6 +656,13 @@ int sqlite3_cryptodecimalextension_init(
 
     if (rc != SQLITE_OK) {
         *pzErrMsg = sqlite3_mprintf("Error registering crypto_denoms virtual table");
+        return SQLITE_ERROR;
+    }
+
+    // Create or register the function crypto_cmp
+    if (sqlite3_create_function(db, "crypto_cmp", 4, SQLITE_UTF8, NULL,
+                                crypto_cmp_sqlite, NULL, NULL) != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_cmp function");
         return SQLITE_ERROR;
     }
 

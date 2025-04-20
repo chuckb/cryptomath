@@ -676,17 +676,17 @@ int crypto_cmp(const crypto_val_t* a, const crypto_val_t* b) {
 
 int crypto_gt_zero(const crypto_val_t* a) {
     assert(a != NULL);
-    return mpz_cmp_ui(a->value, 0) > 0;
+    return mpz_cmp_si(a->value, 0) > 0;
 }
 
 int crypto_lt_zero(const crypto_val_t* a) {
     assert(a != NULL);
-    return mpz_cmp_ui(a->value, 0) < 0;
+    return mpz_cmp_si(a->value, 0) < 0;
 }
 
 int crypto_eq_zero(const crypto_val_t* a) {
     assert(a != NULL);
-    return mpz_cmp_ui(a->value, 0) == 0;
+    return mpz_cmp_si(a->value, 0) == 0;
 }
 
 // Get the denom for a given symbol.
