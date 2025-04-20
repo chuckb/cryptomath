@@ -467,6 +467,242 @@ static void crypto_sum_final(sqlite3_context *context) {
     free(result_str);
 }
 
+// ----------------------------------------------------------------------
+// Aggregation context for crypto_max
+//
+// This is used to find the maximum value in a series of crypto-decimal values.
+// It is used to implement the crypto_max function.
+//
+// Example:
+//   SELECT crypto_max(denom, operand) FROM table;
+
+typedef struct {
+    crypto_val_t max;            // current maximum value
+    crypto_denom_t final_denom;  // final denomination
+    int initialized;             // 0 if not yet initialized with any value
+} crypto_max_ctx_t;
+
+// Step function: called for each row
+static void crypto_max_step(
+    sqlite3_context *context,
+    int argc,
+    sqlite3_value **argv
+){
+    // Expect 4 args
+    if (argc != 4) {
+        sqlite3_result_error(context, "crypto_max requires 4 arguments (crypto, operand_denomination, final_denomination, operand)", -1);
+        return;
+    }
+
+    // Parse the command arguments
+    const unsigned char *crypto_type_str = sqlite3_value_text(argv[0]);
+    const unsigned char *operand_denom_str = sqlite3_value_text(argv[1]);
+    const unsigned char *final_denom_str = sqlite3_value_text(argv[2]);
+    const unsigned char *operand_str = sqlite3_value_text(argv[3]);
+    if (!crypto_type_str || !operand_denom_str || !final_denom_str) {
+        sqlite3_result_null(context);
+        return;
+    }
+
+    if (!operand_str || !crypto_is_valid_decimal((const char*)operand_str)) {
+        // treat as NULL
+        return;
+    }
+
+    // Get crypto_type for the final denom
+    crypto_type_t crypto_type = crypto_get_type_for_symbol((const char*)crypto_type_str);
+    if (crypto_type == CRYPTO_COUNT) {
+        sqlite3_result_error(context, "crypto_max: Invalid crypto type", -1);
+        return;
+    }
+
+    // Get the final denom
+    crypto_denom_t final_denom = crypto_get_denom_for_symbol(crypto_type, (const char*)final_denom_str);
+    if (final_denom == DENOM_COUNT) {
+        sqlite3_result_error(context, "crypto_max: Invalid final denomination", -1);
+        return;
+    }
+
+    // Get the operand denom
+    crypto_denom_t operand_denom = crypto_get_denom_for_symbol(crypto_type, (const char*)operand_denom_str);
+    if (operand_denom == DENOM_COUNT) {
+        sqlite3_result_error(context, "crypto_max: Invalid operand denomination", -1);
+        return;
+    }
+
+    // Access aggregator context
+    crypto_max_ctx_t *p = (crypto_max_ctx_t *)sqlite3_aggregate_context(context, sizeof(*p));
+    if (!p) {
+        // Out of memory
+        sqlite3_result_error_nomem(context);
+        return;
+    }
+
+    // Parse the operand into crypto_val_t
+    crypto_val_t operand;
+    crypto_init(&operand, crypto_type);
+    crypto_set_from_decimal(&operand, operand_denom, (const char*)operand_str);
+
+    // If first time, initialize max with first value
+    if (!p->initialized) {
+        crypto_init(&p->max, crypto_type);
+        crypto_set(&p->max, &operand);
+        p->final_denom = final_denom;
+        p->initialized = 1;
+    } else {
+        // Compare with current max and update if larger
+        if (crypto_cmp(&operand, &p->max) > 0) {
+            crypto_set(&p->max, &operand);
+        }
+    }
+
+    crypto_clear(&operand);
+}
+
+// Final function: called after all rows processed
+static void crypto_max_final(sqlite3_context *context) {
+    crypto_max_ctx_t *p = (crypto_max_ctx_t *)sqlite3_aggregate_context(context, 0);
+
+    // If no rows were processed or aggregator not created, result = NULL
+    if (!p || !p->initialized) {
+        sqlite3_result_null(context);
+        return;
+    }
+
+    // Convert p->max to decimal string
+    char *result_str = crypto_to_decimal_str(&p->max, p->final_denom);
+    // Clear aggregator memory
+    crypto_clear(&p->max);
+    p->initialized = 0;
+
+    if (!result_str) {
+        sqlite3_result_error(context, "crypto_max: Memory error converting max to string", -1);
+        return;
+    }
+
+    // Return as TEXT
+    sqlite3_result_text(context, result_str, -1, SQLITE_TRANSIENT);
+    free(result_str);
+}
+
+// ----------------------------------------------------------------------
+// Aggregation context for crypto_min
+//
+// This is used to find the minimum value in a series of crypto-decimal values.
+// It is used to implement the crypto_min function.
+//
+// Example:
+//   SELECT crypto_min(denom, operand) FROM table;
+
+typedef struct {
+    crypto_val_t min;            // current minimum value
+    crypto_denom_t final_denom;  // final denomination
+    int initialized;             // 0 if not yet initialized with any value
+} crypto_min_ctx_t;
+
+// Step function: called for each row
+static void crypto_min_step(
+    sqlite3_context *context,
+    int argc,
+    sqlite3_value **argv
+){
+    // Expect 4 args
+    if (argc != 4) {
+        sqlite3_result_error(context, "crypto_min requires 4 arguments (crypto, operand_denomination, final_denomination, operand)", -1);
+        return;
+    }
+
+    // Parse the command arguments
+    const unsigned char *crypto_type_str = sqlite3_value_text(argv[0]);
+    const unsigned char *operand_denom_str = sqlite3_value_text(argv[1]);
+    const unsigned char *final_denom_str = sqlite3_value_text(argv[2]);
+    const unsigned char *operand_str = sqlite3_value_text(argv[3]);
+    if (!crypto_type_str || !operand_denom_str || !final_denom_str) {
+        sqlite3_result_null(context);
+        return;
+    }
+
+    if (!operand_str || !crypto_is_valid_decimal((const char*)operand_str)) {
+        // treat as NULL
+        return;
+    }
+
+    // Get crypto_type for the final denom
+    crypto_type_t crypto_type = crypto_get_type_for_symbol((const char*)crypto_type_str);
+    if (crypto_type == CRYPTO_COUNT) {
+        sqlite3_result_error(context, "crypto_min: Invalid crypto type", -1);
+        return;
+    }
+
+    // Get the final denom
+    crypto_denom_t final_denom = crypto_get_denom_for_symbol(crypto_type, (const char*)final_denom_str);
+    if (final_denom == DENOM_COUNT) {
+        sqlite3_result_error(context, "crypto_min: Invalid final denomination", -1);
+        return;
+    }
+
+    // Get the operand denom
+    crypto_denom_t operand_denom = crypto_get_denom_for_symbol(crypto_type, (const char*)operand_denom_str);
+    if (operand_denom == DENOM_COUNT) {
+        sqlite3_result_error(context, "crypto_min: Invalid operand denomination", -1);
+        return;
+    }
+
+    // Access aggregator context
+    crypto_min_ctx_t *p = (crypto_min_ctx_t *)sqlite3_aggregate_context(context, sizeof(*p));
+    if (!p) {
+        // Out of memory
+        sqlite3_result_error_nomem(context);
+        return;
+    }
+
+    // Parse the operand into crypto_val_t
+    crypto_val_t operand;
+    crypto_init(&operand, crypto_type);
+    crypto_set_from_decimal(&operand, operand_denom, (const char*)operand_str);
+
+    // If first time, initialize min with first value
+    if (!p->initialized) {
+        crypto_init(&p->min, crypto_type);
+        crypto_set(&p->min, &operand);
+        p->final_denom = final_denom;
+        p->initialized = 1;
+    } else {
+        // Compare with current min and update if smaller
+        if (crypto_cmp(&operand, &p->min) < 0) {
+            crypto_set(&p->min, &operand);
+        }
+    }
+
+    crypto_clear(&operand);
+}
+
+// Final function: called after all rows processed
+static void crypto_min_final(sqlite3_context *context) {
+    crypto_min_ctx_t *p = (crypto_min_ctx_t *)sqlite3_aggregate_context(context, 0);
+
+    // If no rows were processed or aggregator not created, result = NULL
+    if (!p || !p->initialized) {
+        sqlite3_result_null(context);
+        return;
+    }
+
+    // Convert p->min to decimal string
+    char *result_str = crypto_to_decimal_str(&p->min, p->final_denom);
+    // Clear aggregator memory
+    crypto_clear(&p->min);
+    p->initialized = 0;
+
+    if (!result_str) {
+        sqlite3_result_error(context, "crypto_min: Memory error converting min to string", -1);
+        return;
+    }
+
+    // Return as TEXT
+    sqlite3_result_text(context, result_str, -1, SQLITE_TRANSIENT);
+    free(result_str);
+}
+
 //-----------------------------
 // crypto_cmp_sqlite
 //
@@ -620,6 +856,42 @@ int sqlite3_cryptodecimalextension_init(
 
     if (rc != SQLITE_OK) {
         *pzErrMsg = sqlite3_mprintf("Error registering crypto_sum function");
+        return SQLITE_ERROR;
+    }
+
+    // Register crypto_max aggregate function
+    rc = sqlite3_create_function_v2(
+        db,
+        "crypto_max",         // function name
+        4,                 // number of arguments
+        SQLITE_UTF8,       // preferred text encoding
+        NULL,              // application data
+        NULL,              // xFunc (scalar)
+        crypto_max_step,      // xStep (aggregate step)
+        crypto_max_final,     // xFinal (aggregate final)
+        NULL               // xDestroy
+    );
+
+    if (rc != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_max function");
+        return SQLITE_ERROR;
+    }
+
+    // Register crypto_min aggregate function
+    rc = sqlite3_create_function_v2(
+        db,
+        "crypto_min",         // function name
+        4,                 // number of arguments
+        SQLITE_UTF8,       // preferred text encoding
+        NULL,              // application data
+        NULL,              // xFunc (scalar)
+        crypto_min_step,      // xStep (aggregate step)
+        crypto_min_final,     // xFinal (aggregate final)
+        NULL               // xDestroy
+    );
+
+    if (rc != SQLITE_OK) {
+        *pzErrMsg = sqlite3_mprintf("Error registering crypto_min function");
         return SQLITE_ERROR;
     }
 

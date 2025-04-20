@@ -261,6 +261,18 @@ void test_sqlite_extension() {
     }
     sqlite3_finalize(stmt);
 
+    // Test case for crypto_max
+    verify_sql_result(db,
+        "SELECT crypto_max('ETH', 'ETH', 'WEI', val) FROM t",
+        "1234567890000000001",
+        "Basic max test");
+
+    // Test case for crypto_max
+    verify_sql_result(db,
+        "SELECT crypto_min('ETH', 'ETH', 'WEI', val) FROM t",
+        "765432109999999999",
+        "Basic min test");
+
     // Test cases for crypto_sub
     verify_sql_result(db,
         "SELECT crypto_sub('ETH', 'GWEI', '2', '1')",

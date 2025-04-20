@@ -435,6 +435,7 @@ int crypto_is_valid_type(crypto_type_t type);
 int crypto_is_valid_denom(crypto_denom_t denom);
 void crypto_init(crypto_val_t* val, crypto_type_t type);
 void crypto_clear(crypto_val_t* val);
+void crypto_set(crypto_val_t* to, const crypto_val_t* from);
 void crypto_set_from_decimal(crypto_val_t* val, crypto_denom_t denom, const char* decimal_str);
 char* crypto_to_decimal_str(crypto_val_t* val, crypto_denom_t denom);
 void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
@@ -488,6 +489,15 @@ void crypto_init(crypto_val_t* val, crypto_type_t type) {
 void crypto_clear(crypto_val_t* val) {
     assert(val != NULL);
     mpz_clear(val->value);
+}
+
+// Set the value of a crypto_val_t from another crypto_val_t.
+// Both values must be of the same crypto type.
+void crypto_set(crypto_val_t* to, const crypto_val_t* from) {
+    assert(to != NULL);
+    assert(from != NULL);
+    assert(to->crypto_type == from->crypto_type);
+    mpz_set(to->value, from->value);
 }
 
 // Set the value of a crypto_val_t from a decimal string.

@@ -132,6 +132,9 @@ void crypto_set_from_decimal(crypto_val_t* val, crypto_def_t denom, const char* 
 // Convert amount to decimal string
 char* crypto_to_decimal_str(crypto_val_t* val, crypto_def_t denom);
 
+// Set one crypto amount to another
+void crypto_set(crypto_val_t* to, const crypto_val_t* from)
+
 // Arithmetic operations
 void crypto_add(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
 void crypto_sub(crypto_val_t* r, const crypto_val_t* a, const crypto_val_t* b);
@@ -238,6 +241,8 @@ crypto_cmp(crypto, denomination, operand1, operand2) -> INTEGER
 
 -- Aggregate operations
 crypto_sum(crypto, operand_denomination, final_denomination, operand) -> TEXT
+crypto_max(crypto, operand_denomination, final_denomination, operand) -> TEXT
+crypto_min(crypto, operand_denomination, final_denomination, operand) -> TEXT
 
 -- Metadata as virtual tables; list supported crypto types and denominations
 crypto_types()
@@ -265,6 +270,11 @@ SELECT crypto_scale('BTC', 'BTC', 'SAT', crypto_add('BTC', 'BTC', amount, fee)) 
 
 -- Sum BITCOIN across rows and scale output to SATS
 SELECT crypto_sum('BTC', 'BTC', 'SAT', amount) FROM transactions;
+
+-- Find maximum and minimum BITCOIN amounts
+SELECT crypto_max('BTC', 'BTC', 'SAT', amount) as max_amount,
+       crypto_min('BTC', 'BTC', 'SAT', amount) as min_amount
+FROM transactions;
 
 -- Compare cryptocurrency amounts
 SELECT 
